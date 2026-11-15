@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XARVIS Sky Viewer</title>
+<link rel="stylesheet" href="{{ asset('css/viewer.css') }}">
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">Loading sky…</div>
+
+<div class="card" id="brand">
+  <div class="title">XARVIS <span>Where is SPHEREx?</span></div>
+  <div id="clock">…</div>
+  <div id="clockSub"><span class="badge live" id="badge">LIVE</span><span id="clockNote"></span></div>
+  <div id="status"></div>
+  <button class="ghost" id="advBtn" style="text-align:left">Advanced orbital parameters <span id="advWarn"></span><span id="advArrow">▾</span></button>
+  <div id="advScroll" hidden><div id="warns"></div><div id="adv"></div><div id="sources" class="dim"></div></div>
+</div>
+
+<div class="card" id="tools">
+  <div class="row"><button id="reset">Reset view</button><button id="spin">Spin</button></div>
+  <div id="spinPanel" hidden>
+    <div class="grp">Spin axis <span id="spinVal">0°</span></div>
+    <input id="spinAxis" type="range" min="-90" max="90" step="1" value="0" title="Tilt of the spin axis: 0° = vertical on screen, ±90° = horizontal">
+    <div class="row"><button id="spinV">Vertical</button><button id="spinH">Horizontal</button><button id="spinE" title="Spin about the ecliptic north pole">Ecliptic</button></div>
+  </div>
+  <button class="ghost" id="gotoBtn" style="text-align:left">Go to sky coordinates <span id="gotoArrow">▾</span></button>
+  <div id="gotoChip"></div>
+  <div id="gotoPanel" hidden>
+    <label class="gl">Test targets<select id="gTarget"><option value="">Choose a target…</option></select></label>
+    <div class="fgrid">
+      <label class="wide">Right ascension<input id="gRA" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 08 55 10.83 or 133.795"></label>
+      <label class="wide">Declination<input id="gDec" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. -07 14 42.5 or -7.245"></label>
+    </div>
+    <details class="adv"><summary>Advanced</summary>
+      <label class="gl">Patch size (SPHEREx pixels per side)<input id="gPix" type="number" min="10" max="2000" step="10" value="50"></label>
+      <div id="gPixInfo" class="dim"></div>
+    </details>
+    <div id="gMsg" class="dim">J2000 / ICRS: hours-minutes-seconds and degrees-arcminutes-arcseconds, or decimal degrees.</div>
+    <button id="gGo" class="primary">Show this patch</button>
+  </div>
+  <button class="ghost" id="trackBtn" style="text-align:left">Track objects <span id="trackN"></span><span id="trackArrow">▾</span></button>
+  <div id="trackChips"></div>
+  <div id="trackPanel" hidden>
+    <input id="tq" type="search" spellcheck="false" placeholder="Search by name or number" autocomplete="off">
+    <div class="fgrid">
+      <label>Show<select id="fShow">
+        <optgroup label="Known objects"><option value="all">All known objects</option><option value="planets">Planets and Moon</option><option value="neo">Near-Earth objects</option><option value="belt">Main-belt asteroids</option><option value="trojan">Jupiter Trojans</option><option value="tno">Kuiper belt</option><option value="lookup">Looked up (JPL)</option></optgroup>
+        <optgroup label="Unknown objects"><option value="candidate">SPHEREx candidates</option></optgroup></select></label>
+      <label>Only<select id="fOnly"><option value="any">No extra filter</option><option value="vis">Visible to SPHEREx now</option><option value="near">Near Earth now</option><option value="pha">Potentially hazardous</option><option value="big">Over 100 km</option><option value="measured">Size measured</option></select></label>
+    </div>
+    <div id="tCount" class="dim"></div>
+    <div id="tList"></div>
+    <button id="tLookup" hidden></button>
+    <div id="tMsg" class="dim"></div>
+  </div>
+  <button class="ghost" id="layersBtn" style="text-align:left">Layers ▾</button>
+  <div id="layers" hidden>
+    <label><input type="checkbox" id="cStars" checked>Stars</label>
+    <label><input type="checkbox" id="cLines">Constellations &amp; names</label>
+    <label><input type="checkbox" id="cOrbits" checked>Orbits</label>
+    <label><input type="checkbox" id="cBelts" checked>Asteroids &amp; Kuiper belt</label>
+    <div class="grp">What SPHEREx can see</div>
+    <label title="Sky SPHEREx can point at right now: at least 91° from the Sun and not behind Earth"><input type="checkbox" id="cVisNow" checked><i class="sw now"></i>Visible now</label>
+    <label title="Sky allowed by the Sun limit (at least 91° from the Sun); Earth moves out of the way during each 98-minute orbit"><input type="checkbox" id="cVisAll"><i class="sw all"></i>Visible overall (Sun limit)</label>
+    <div class="grp">XARVIS analysis</div>
+    <label title="Every patch analysed with XARVIS, where SPHEREx imaged it (a moving object: the path its images followed). Double-click one to open it again"><input type="checkbox" id="cAnalysed" checked><i class="sw done"></i>Analysed patches <span id="cAnalysedN" class="dim"></span></label>
+  </div>
+</div>
+
+<div class="card" id="dock">
+  <div class="dz" id="coords"><div class="h">Under the cursor <span class="hint" id="cHint">double-click to analyse</span></div><div id="coordsBody"></div></div>
+  <div class="dz" id="timebar">
+    <div class="h">Time · UTC <span class="hhr"><span class="hint" id="tSpan"></span><span class="hint" id="tHint"></span></span></div>
+    <div class="tctl">
+      <span class="play"><button id="rev" title="Play backward">◀</button><button id="pause" title="Pause (Space)">❚❚</button><button id="fwd" title="Play forward">▶</button></span>
+      <select id="speed" title="Playback speed"></select>
+      <input type="text" id="dateIn" spellcheck="false" title="UTC date, e.g. 2030-06-01 12:00 or -500-03-01">
+      <button id="go">Go</button>
+      <select id="jump" title="Jump to the SPHEREx data"><option value="">Jump to…</option><option value="first">First data · 2025-05-01 00:00 UTC</option><option value="latest" id="jumpLatest">Latest data</option></select>
+      <button id="live" class="primary" title="Back to the real time (L)">Live</button>
+    </div>
+  </div>
+  <div class="dz" id="zoombox">
+    <div class="h">Zoom <input id="zoom" type="range" min="0" max="1" step="0.0005" value="0" title="Zoom"></div>
+    <div id="zoomctl"><button id="zFar" title="Zoom out past the solar system">Far out</button><button id="zSys">Planets</button><button id="zSphx" class="primary">SPHEREx</button></div>
+  </div>
+  <div id="links"><a href="/about" class="lk main">ⓘ About XARVIS</a><a href="#" id="helpLink" class="lk main">⌨ Controls</a><span class="grow"></span><span class="lbl">Data sources</span><a href="https://gea.esac.esa.int/archive/" target="_blank" rel="noopener" class="lk" title="Star positions: ESA Hipparcos new reduction, ESA archive (opens in a new tab)">ESA Hipparcos<span class="ext">↗</span></a><a href="https://ssd.jpl.nasa.gov/planets/eph_export.html" target="_blank" rel="noopener" class="lk" title="Planets and Moon: NASA/JPL planetary ephemerides (opens in a new tab)">JPL DE440<span class="ext">↗</span></a><a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noopener" class="lk" title="SPHEREx trajectory: NASA/JPL Horizons (opens in a new tab)">JPL Horizons<span class="ext">↗</span></a><a href="https://ssd.jpl.nasa.gov/tools/sbdb_query.html" target="_blank" rel="noopener" class="lk" title="Asteroids, Trojans, Kuiper belt: NASA/JPL Small-Body Database (opens in a new tab)">JPL SBDB<span class="ext">↗</span></a><a href="https://irsa.ipac.caltech.edu/Missions/spherex.html" target="_blank" rel="noopener" class="lk" title="SPHEREx mission facts and data: NASA/IPAC IRSA (opens in a new tab)">IRSA SPHEREx<span class="ext">↗</span></a><a href="https://github.com/Stellarium/stellarium-skycultures" target="_blank" rel="noopener" class="lk" title="Constellation figures and names: Stellarium sky cultures (opens in a new tab)">Stellarium<span class="ext">↗</span></a></div>
+</div>
+
+<div class="card" id="tip"></div>
+
+<!-- landing page: what this is and how to drive it -->
+<div id="fade" aria-hidden="true"></div>
+<div id="intro">
+  <div class="card" id="introCard" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="h">NASA Space Apps 2026 · Planet X and SPHEREx</div>
+    <h1 id="introTitle">XARVIS</h1>
+    <p class="lead">Follow NASA's SPHEREx infrared telescope live, and explore the sky it maps, with official NASA, ESA and IPAC data.</p>
+    <div class="keys">
+      <div><b>Drag</b><span>rotate</span></div>
+      <div><b>Scroll</b><span>zoom</span></div>
+      <div><b>Double-click</b><span>analyse a point of the sky</span></div>
+      <div><b>Time bar</b><span>travel through time</span></div>
+    </div>
+    <details class="more"><summary>All controls</summary>
+      <div class="ctl">
+        <div><b>Right-drag / Shift-drag</b><span>roll the view</span></div>
+        <div><b>Hover</b><span>names and coordinates</span></div>
+        <div><b>Top right</b><span>go to coordinates, track objects, layers</span></div>
+        <div><b>Keyboard</b><span>Space pause · L live · arrows rotate · Q / E roll</span></div>
+      </div>
+    </details>
+    <div class="introBtns"><label class="dim small"><input type="checkbox" id="introSkip"> Don't show again</label><a href="/about" class="small">About</a><button id="introGo" class="primary">Start exploring</button></div>
+  </div>
+</div>
+
+<!-- double-click analysis popup: the SPHEREx images of the patch on the left (static/js/analysis.js: requestAnalysis), the
+     data on the right. While the data comes from NASA a loading card shows the steps and tips; "Minimize" keeps it loading
+     in a small badge (bottom right) that shows a check mark when the images are ready. -->
+<div id="anaBack" hidden>
+  <div class="card" id="ana" role="dialog" aria-modal="true" aria-labelledby="anaTitle">
+    <div class="anaHead">
+      <div><div class="h">Sky point analysis</div><div id="anaTitle">…</div></div>
+      <div class="anaHeadBtns"><button class="ghost" id="anaMin" title="Minimize: keep loading in the background" aria-label="Minimize">–</button><button class="ghost" id="anaX" title="Close (Esc)" aria-label="Close">✕</button></div>
+    </div>
+    <div class="anaBody">
+      <section id="anaViz" class="anaLeft" aria-label="SPHEREx images">
+        <div id="tl">
+          <div class="tlHead"><span class="ph">SPHEREx image time-lapse</span>
+            <label class="dim" for="tlCount">Images <select id="tlCount" title="How many SPHEREx images to load, spread over all its survey dates">
+              <option value="8">8</option><option value="24" selected>24</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></label></div>
+          <div id="tlTime" class="dim">A new analysis can take up to about a minute for low image counts (8 to 50) and up to about 3 minutes for high counts (100 or more).</div>
+          <div id="tlTrack" hidden></div>
+          <div id="tlLoad" hidden role="status" aria-live="polite">
+            <div class="lc">
+              <div class="lcTop"><div class="spin" aria-hidden="true"></div><div><b id="tlLoadTitle">Collecting SPHEREx data from NASA</b><div class="dim small">NASA/IPAC IRSA archive · ESA Gaia · NASA/JPL</div></div></div>
+              <div id="tlLoadTime" class="small"></div>
+              <ol id="tlSteps"><li>Search the SPHEREx archive</li><li>Download and measure the images</li><li>Compare with the catalogs and map the sky</li><li>Make the images</li><li>Load them here</li></ol>
+              <div id="tlBar"><i id="tlFill"></i></div>
+              <div id="tlMsg" class="dim"></div>
+              <div class="tipBox"><div class="tipHead"><b>Tip</b><button id="tlTipNext" class="ghost" title="Next tip">Next ›</button></div><div id="tlTip"></div></div>
+              <button id="tlMinBtn">Minimize · keep loading in the background</button>
+            </div>
+          </div>
+          <div id="tlErr" hidden role="alert"><div id="tlErrMsg"></div><button id="tlRetry">Try again</button></div>
+          <div id="tlPlayer" hidden>
+            <div id="tlTitle"></div>
+            <div id="tlView"><img id="tlImg" alt="SPHEREx image of the patch"><svg id="tlSvg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Objects found in this image"></svg></div>
+            <div class="tlCtl" role="group" aria-label="Time-lapse controls">
+              <button id="tlFirst" class="ic" title="First image (Home)" aria-label="First image"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5v14L9 12z"/></svg></button>
+              <button id="tlPrev" class="ic" title="Previous image (←)" aria-label="Previous image"><svg viewBox="0 0 24 24"><path d="M16 5v14L5 12z"/></svg></button>
+              <button id="tlPlay" class="ic play" title="Play / pause (Space)" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+              <button id="tlNext" class="ic" title="Next image (→)" aria-label="Next image"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+              <button id="tlLast" class="ic" title="Last image (End)" aria-label="Last image"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l10-7z"/></svg></button>
+              <input type="range" id="tlSlide" min="0" max="0" step="1" value="0" aria-label="Frame">
+              <span id="tlNum" class="dim"></span>
+              <select id="tlSpeed" title="Playback speed" aria-label="Playback speed"><option value="1">0.5×</option><option value="2" selected>1×</option><option value="4">2×</option><option value="8">4×</option></select>
+            </div>
+            <div id="tlKey"></div>
+            <div id="tlDisclaimer" role="note"><b>About these images.</b> They have slight display enhancements: colour from two wavelengths, sharpening and upscaling (the measurements use the original pixels). They can show artefacts such as detector ghosts, cosmic-ray hits, edge effects and halos around bright stars. The automatic detection (the sky map, NEW objects and tracking) can make mistakes, so check a result before drawing conclusions from it.</div>
+            <div id="tlMapBar"><label><input type="checkbox" id="tlMapOn" checked> Sky map</label><span id="tlMapText" class="dim"></span></div>
+            <div id="tlMapKey" class="dim"><span><b class="mk new">○</b>NEW object (in no catalog)</span><span><b class="mk named">★</b>named star</span><span><b class="mk gaia">+</b>Gaia DR3</span><span><b class="mk catwise">×</b>CatWISE only</span><span><b class="mk sb">◇</b>known asteroid / comet</span><span><b class="mk planet">◇</b>planet / Moon</span><span><b class="mk art">□</b>flagged artifact</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="anaRight" aria-label="Data">
+        <div id="anaVis"></div>
+        <div id="anaRows"></div>
+        <div id="anaTarget"></div>
+        <div id="tlData" hidden>
+          <div id="tlSel"></div>
+          <div class="sbh">This image</div>
+          <div id="tlInfo"></div>
+          <div id="tlDb"></div>
+          <div id="tlNote" class="dim"></div>
+        </div>
+        <details id="anaPayload"><summary>Data passed to the backend</summary><pre id="anaJSON"></pre></details>
+      </section>
+    </div>
+    <div class="row anaBtns"><button id="anaCopy">Copy coordinates</button><button id="anaClose" class="primary">Close</button></div>
+  </div>
+</div>
+<!-- the minimized analysis: a spinner while it loads, a check mark when the images are ready; click to open it again -->
+<div id="anaMini" hidden><button id="anaMiniOpen" title="Open the analysis"><span id="anaMiniIcon" class="spin" aria-hidden="true"></span><span><b id="anaMiniTitle">SPHEREx analysis</b><span id="anaMiniText" class="dim"></span></span></button><button id="anaMiniX" class="ghost" title="Cancel and close" aria-label="Cancel and close">✕</button></div>
+<div id="perf"></div>
+
+<script src="{{ asset('js/core.js') }}"></script>
+<script src="{{ asset('js/scene.js') }}"></script>
+<script src="{{ asset('js/draw.js') }}"></script>
+<script src="{{ asset('js/tracker.js') }}"></script>
+<script src="{{ asset('js/view3d.js') }}"></script>
+<script src="{{ asset('js/analysis.js') }}"></script>
+<script src="{{ asset('js/app.js') }}"></script>
+</body>
+</html>

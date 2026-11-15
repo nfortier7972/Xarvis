@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+# output of web runs (summary.json + PNG frames per job); pipeline result tables stay tracked
+results/jobs/
