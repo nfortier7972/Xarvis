@@ -1,0 +1,1649 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XARVIS Sky Viewer</title>
+<style>
+  :root { --bg:#02040a; --card:#070b16f2; --line:#1f2a44; --fg:#f2f5fa; --dim:#8a97b3; --accent:#fc3d21; --nasa:#fc3d21; --esa:#00b5e2; --teal:#00b5e2; --warn:#ffb81c; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); overflow:hidden;
+              font:13.5px/1.45 "Helvetica Neue",Helvetica,Arial,"Segoe UI",sans-serif; font-variant-numeric:tabular-nums; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; cursor:grab; touch-action:none; }
+  canvas.drag { cursor:grabbing; } canvas.hit { cursor:pointer; }
+  .card { position:absolute; background:var(--card); border:1px solid var(--line); border-top:2px solid var(--esa); border-radius:2px; padding:10px 12px; backdrop-filter:blur(6px); }
+  #brand { border-top-color:var(--nasa); } #tip { border-top-color:var(--line); }
+  button, select, input { font:inherit; color:var(--fg); }
+  button { background:transparent; border:1px solid #34436a; border-radius:2px; padding:6px 11px; text-transform:uppercase; letter-spacing:.08em; font-size:11.5px; font-weight:600; cursor:pointer; white-space:nowrap; }
+  button:hover { background:#16213d; border-color:var(--esa); }
+  button.on, button.primary { background:var(--nasa); color:#fff; border-color:var(--nasa); font-weight:700; }
+  button.ghost { background:transparent; border-color:transparent; color:var(--dim); padding:2px 4px; }
+  button.ghost:hover { color:var(--fg); }
+  #speed { min-width:132px; }
+  select, input[type=text] { background:#050913; border:1px solid #34436a; border-radius:2px; padding:6px 8px; }
+  input[type=range] { accent-color:var(--accent); }
+  input[type=checkbox] { accent-color:var(--accent); }
+  [hidden] { display:none !important; }
+  /* slim scrollbars in the panel style */
+  @supports not selector(::-webkit-scrollbar) { * { scrollbar-width:thin; scrollbar-color:#4a5f94 #0b1224; } }   /* Firefox */
+  ::-webkit-scrollbar { width:6px; height:6px; } ::-webkit-scrollbar-button { display:none; } ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-track { background:#0b1224; } ::-webkit-scrollbar-thumb { background:#4a5f94; border-radius:0; } ::-webkit-scrollbar-thumb:hover { background:var(--esa); }
+  .dim { color:var(--dim); }
+
+  /* top-left: what time is it, what is SPHEREx doing */
+  #brand { top:14px; left:14px; width:324px; max-width:calc(100vw - 28px); max-height:calc(100vh - 170px); display:flex; flex-direction:column; }
+  #advScroll { overflow-y:auto; min-height:0; margin-right:-6px; padding-right:4px; }
+  #adv .grp { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; border-bottom:1px solid var(--line); padding-bottom:2px; margin:10px 0 3px; }
+  #adv .v { display:flex; justify-content:space-between; gap:12px; font-size:12.5px; line-height:18px; } #adv .v span:first-child { color:var(--dim); white-space:nowrap; } #adv .v span:last-child { text-align:right; }
+  #sources { font-size:11px; margin-top:10px; line-height:1.35; }
+  #status { margin-top:6px; font-size:13.5px; line-height:1.45; } #status b { font-weight:600; }
+  #brand .title { font-weight:700; letter-spacing:.22em; font-size:14px; text-transform:uppercase; }
+  #brand .title span { color:var(--esa); font-weight:500; letter-spacing:.04em; text-transform:none; margin-left:6px; font-size:13px; }
+  #clock { font-size:18px; font-weight:600; white-space:nowrap; margin-top:6px; font-variant-numeric:tabular-nums; }
+  #clockSub { margin-top:2px; font-size:12.5px; color:var(--dim); display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .badge { display:inline-block; padding:1px 7px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:.04em; background:#26335f; color:#cfd8ff; }
+  .badge.live { background:#1c6b4b; color:#c9ffe6; } .badge.sim { background:#6b4a1c; color:#ffe2b3; }
+  #status { margin-top:8px; font-size:12.5px; }
+  #status .amber { color:var(--warn); }
+  #warns:empty { display:none; } #warns { margin-top:8px; padding:6px 8px; border-left:2px solid var(--warn); background:#ffb81c12; font-size:12px; line-height:1.4; color:var(--warn); }
+  #warns div + div { margin-top:4px; } #warns .wh { font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; }
+  #advWarn { color:var(--warn); letter-spacing:.04em; margin-right:4px; text-transform:none; font-weight:500; }
+
+  /* top-right: view controls */
+  #tools { top:14px; right:14px; display:flex; flex-direction:column; gap:8px; width:268px; max-height:calc(100vh - 190px); overflow-y:auto; }
+  .seg { display:flex; border:1px solid #34436a; border-radius:2px; overflow:hidden; }
+  .seg button { flex:1; border:0; border-radius:0; background:#050913; padding:7px 4px; }
+  .seg button.on { background:var(--nasa); }
+  .row { display:flex; gap:6px; flex-wrap:wrap; } .row > button { flex:1; padding:5px 4px; }
+  #layers { display:grid; gap:2px; font-size:13px; padding-top:2px; }
+  #layers label { display:flex; align-items:center; gap:7px; color:#cdd6f5; padding:2px 0; }
+  #tools > * { flex-shrink:0; }
+  #tools.wide { width:340px; }
+  #trackN { color:var(--warn); text-transform:none; letter-spacing:.04em; margin-right:4px; }
+  #trackChips:empty { display:none; } #trackChips { display:flex; flex-direction:column; gap:4px; }
+  .chip { display:flex; align-items:center; gap:4px; border:1px solid #ffb81c66; border-left:3px solid #ffb81c; padding:2px 2px 2px 8px; font-size:12px; }
+  .chip b { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; color:#ffd27a; }
+  .chip button { font-size:10.5px; padding:3px 6px; } .chip.focus .cf { color:var(--warn); }
+  #trackPanel { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--line); padding-top:8px; } #trackPanel[hidden] { display:none; }
+  #tq { width:100%; background:#050913; border:1px solid #34436a; border-radius:2px; padding:7px 8px; }
+  #tq:focus, #trackPanel select:focus { outline:none; border-color:var(--esa); }
+  .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:6px 8px; } .fgrid .wide { grid-column:1 / -1; }
+  .fgrid label { display:flex; flex-direction:column; gap:2px; font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); }
+  .fgrid select { width:100%; min-width:0; padding:4px 6px; font-size:12px; text-transform:none; letter-spacing:0; }
+  #tCount { font-size:11.5px; } #tCount:empty { display:none; }
+  #tList { max-height:240px; overflow-y:auto; border:1px solid var(--line); } #tList:empty { display:none; }
+  .ti { padding:5px 8px; border-bottom:1px solid #141c33; cursor:pointer; display:flex; flex-direction:column; }
+  .ti:hover { background:#101a33; } .ti.on { background:#ffb81c14; border-left:3px solid #ffb81c; padding-left:5px; }
+  .ti .tn { font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .ti .tm { font-size:11px; color:var(--dim); }
+  .tmsg { padding:8px; font-size:12px; color:var(--dim); line-height:1.4; }
+  #tLookup { width:100%; font-size:10.5px; } #tMsg { font-size:11.5px; line-height:1.4; } #tMsg:empty { display:none; } #tMsg a { color:#8fa3cf; }
+  #layers .sw { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:-1px; } #layers .sw.now { background:#00b5e255; border:1px solid #00b5e2; } #layers .sw.all { background:#00b5e214; border:1px dashed #ff9d6b; }
+  #spinPanel { border-top:1px solid var(--line); padding-top:6px; display:flex; flex-direction:column; gap:6px; } #spinPanel[hidden] { display:none; }
+  #spinPanel .grp { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; display:flex; justify-content:space-between; } #spinPanel .grp span { color:var(--fg); letter-spacing:.04em; }
+  #spinPanel .row { display:flex; gap:6px; } #spinPanel .row button { flex:1 1 0; min-width:0; padding:5px 0; font-size:10.5px; letter-spacing:.02em; }
+  #spinPanel { min-width:0; } #spinPanel input[type=range] { width:100%; margin:0; }
+  #layers .grp { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; border-bottom:1px solid var(--line); padding-bottom:2px; margin-top:6px; }
+
+  /* bottom-left: where is the cursor */
+           background:#070b16d9; border:1px solid var(--line); padding:4px 6px; font-size:12px; }
+
+  /* bottom-centre: time */
+  /* bottom-right: zoom */
+
+  #perf { position:absolute; left:14px; top:150px; color:#7cffb0; font:11px monospace; display:none; }
+  #tip { pointer-events:none; display:none; padding:9px 12px; z-index:5; max-width:330px; font-size:13px; line-height:1.4; border-color:#3b4d86; box-shadow:0 6px 24px #000a; }
+  #tip b { font-size:14px; } #tip .sub { color:var(--esa); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; margin-left:6px; }
+  #tip table { border-collapse:collapse; margin-top:4px; font-variant-numeric:tabular-nums; }
+  #tip td:first-child { color:var(--dim); padding-right:12px; white-space:nowrap; }
+  #tip .note { color:var(--dim); font-size:12px; margin-top:5px; }
+  #anaBack { position:absolute; inset:0; z-index:20; background:#02040acc; display:flex; align-items:center; justify-content:center; padding:16px; }
+  #anaBack[hidden] { display:none; }
+  #ana { position:relative; width:560px; max-width:100%; max-height:calc(100vh - 32px); overflow-y:auto; border-top-color:var(--nasa); padding:14px 16px 16px; }
+  #ana .anaHead { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+  #ana .h { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; }
+  #anaTitle { font-size:16px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; }
+  #anaX { font-size:16px; padding:2px 6px; }
+  #anaRows { margin-top:10px; }
+  #anaVis { margin-top:10px; padding:9px 12px; font-size:13px; line-height:1.45; border:1px solid; }
+  #anaVis.ok { border-color:#5fe0a066; background:#5fe0a014; } #anaVis.no { border-color:#ff8a7a88; background:#ff6b5a18; }
+  #anaVis b { display:block; font-size:14px; margin-bottom:2px; } #anaVis span { color:var(--dim); } #anaVis .span { display:block; margin-top:6px; padding-top:6px; border-top:1px solid #ffffff1a; }
+  #anaRows .v { display:flex; justify-content:space-between; gap:12px; font-size:12.5px; line-height:19px; } #anaRows .v span:first-child { color:var(--dim); white-space:nowrap; } #anaRows .v span:last-child { text-align:right; }
+  #anaViz { margin-top:12px; border:1px dashed #34436a; padding:12px 14px 14px; text-align:center; font-size:12px; line-height:1.45; }
+  #anaViz .vh { display:flex; justify-content:space-between; font-size:10.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--esa); margin-bottom:6px; }
+  #anaMap { position:static; inset:auto; cursor:default; width:100%; height:auto; aspect-ratio:440/300; display:block; background:#050913; border:1px solid var(--line); }
+  #anaLegend { font-size:11px; margin:6px 0 10px; text-align:left; }
+  #anaTarget:empty, #anaSB:empty { display:none; }
+  #anaTarget { margin-top:10px; border-left:2px solid var(--esa); padding:4px 10px; font-size:12.5px; }
+  #anaTarget .v, #anaSB .v { display:flex; justify-content:space-between; gap:12px; line-height:19px; } #anaTarget .v span:first-child { color:var(--dim); white-space:nowrap; }
+  #anaSB { margin-top:12px; font-size:12px; } #anaSB .sbh { font-size:10.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--esa); margin-bottom:4px; }
+  #anaSB table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; } #anaSB td, #anaSB th { text-align:left; padding:3px 6px 3px 0; border-bottom:1px solid #141c33; }
+  #anaSB th { color:var(--dim); font-weight:500; font-size:11px; } #anaSB td:not(:first-child), #anaSB th:not(:first-child) { text-align:right; }
+  #gotoPanel { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--line); padding-top:8px; } #gotoPanel[hidden] { display:none; }
+  #gotoPanel input[type=text] { width:100%; min-width:0; padding:5px 6px; font-size:12.5px; text-transform:none; letter-spacing:0; }
+  #gotoPanel .gl { display:flex; flex-direction:column; gap:2px; font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); }
+  #gotoPanel .gl select { padding:5px 6px; font-size:12.5px; text-transform:none; letter-spacing:0; }
+  #gMsg { font-size:11.5px; line-height:1.4; }
+  #gotoPanel .adv summary { cursor:pointer; font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; }
+  #gotoPanel .adv[open] summary { margin-bottom:6px; } #gotoPanel input[type=number] { width:100%; padding:5px 6px; font-size:12.5px; background:#050913; border:1px solid #34436a; border-radius:2px; color:var(--fg); text-transform:none; letter-spacing:0; }
+  #gPixInfo { font-size:11.5px; margin-top:4px; } #gMsg.err { color:#ff8a7a; }
+  #gotoChip:empty { display:none; }
+  #spx { margin-top:4px; text-align:left; } #spx .spxHead { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:6px; }
+  #spxStart { display:flex; align-items:center; gap:10px; flex-wrap:wrap; } #spxStart select { padding:4px 6px; }
+  #spxProg .bar { height:6px; background:#0b1224; border:1px solid var(--line); } #spxProg .bar i { display:block; height:100%; width:0; background:var(--esa); transition:width .3s; }
+  .spxView { position:relative; width:300px; max-width:100%; aspect-ratio:1; margin:6px auto; background:#050913; border:1px solid var(--line); }
+  #spxImg { width:100%; height:100%; image-rendering:pixelated; display:block; }
+  #spxRing { position:absolute; border:1.5px solid #5fd6f0; border-radius:50%; pointer-events:none; }
+  .spxCtl { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .spxCtl input[type=range] { flex:1; min-width:120px; } .spxCtl select { padding:4px 6px; font-size:12px; }
+  #spxPlay { width:38px; padding:4px 0; }
+  #spxInfo { font-size:12px; margin:6px 0; font-variant-numeric:tabular-nums; } #spxInfo .warn { color:var(--warn); }
+  #spxSpec { width:100%; height:auto; aspect-ratio:440/130; display:block; position:static; background:#050913; border:1px solid var(--line); cursor:default; }
+  #spxSrc { font-size:11px; margin-top:4px; }
+  #anaViz .ph { font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; color:var(--fg); margin-bottom:6px; }
+  #anaPayload { margin-top:12px; font-size:12px; } #anaPayload summary { cursor:pointer; color:var(--dim); }
+  #anaJSON { background:#050913; border:1px solid var(--line); padding:8px 10px; margin:8px 0 0; font:11px/1.4 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-all; max-height:200px; overflow:auto; }
+  #ana .anaBtns { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+  /* landing: the scene fades in from black the first time, the welcome card rises in on top and fades out when closed */
+  #fade { position:fixed; inset:0; z-index:40; background:var(--bg); pointer-events:none; transition:opacity 1.4s ease; }
+  #fade.gone { opacity:0; }
+  #loading { z-index:41; }
+  #intro { position:absolute; inset:0; z-index:30; background:radial-gradient(ellipse at center, #02040a66 0%, #02040ae0 75%); display:flex; align-items:center; justify-content:center; padding:16px; overflow-y:auto;
+           transition:opacity .45s ease; }
+  #intro[hidden] { display:none; } #intro.out { opacity:0; pointer-events:none; }
+  #introCard { position:relative; width:440px; max-width:100%; border-top-color:var(--nasa); padding:24px 26px 20px; margin:auto; opacity:0; transform:translateY(14px);
+               transition:opacity .7s ease .5s, transform .7s ease .5s; }
+  #intro.show #introCard { opacity:1; transform:none; }
+  #introCard .h { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; }
+  #introCard h1 { margin:8px 0 6px; font-size:30px; letter-spacing:.32em; font-weight:700; }
+  #introCard .lead { margin:0 0 18px; font-size:14.5px; line-height:1.5; color:#dfe6f3; }
+  #introCard .keys { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  #introCard .keys div { border:1px solid var(--line); border-left:2px solid var(--esa); padding:7px 10px; display:flex; flex-direction:column; }
+  #introCard .keys b { font-size:13px; font-weight:600; } #introCard .keys span { color:var(--dim); font-size:12px; }
+  #introCard .more { margin-top:12px; font-size:12.5px; } #introCard .more summary { cursor:pointer; color:var(--dim); }
+  #introCard .ctl { margin-top:6px; } #introCard .ctl div { display:flex; gap:12px; padding:4px 0; border-bottom:1px solid var(--line); }
+  #introCard .ctl b { width:160px; flex:none; font-weight:600; } #introCard .ctl span { color:var(--dim); }
+  #introCard .small { font-size:12px; }
+  #introCard .introBtns { display:flex; align-items:center; gap:14px; margin-top:20px; }
+  #introCard .introBtns label { margin-right:auto; display:flex; align-items:center; gap:6px; cursor:pointer; }
+  #introCard a { color:#9fb6e6; } #introCard a:hover { color:var(--esa); }
+  @media (max-width:340px) { #introCard .keys { grid-template-columns:1fr; } }
+  @media (max-width:480px) { #introCard .ctl div { flex-direction:column; gap:0; } }
+  @media (prefers-reduced-motion:reduce) { #fade, #intro, #introCard { transition:none; } }
+  #loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--dim); font-size:15px; pointer-events:none; }
+  @media (max-width:900px) {
+    #brand { width:304px; } #clock { font-size:16px; } #tools { width:258px; } #advBtn { white-space:normal; text-align:left; } .seg button { letter-spacing:.04em; font-size:10.5px; }
+  }
+
+  /* bottom dock: one panel, three zones lined up with the top-left and top-right panels, links in a footer row */
+  #dock { position:absolute; left:14px; right:14px; bottom:14px; padding:0; display:grid; grid-template-columns:324px minmax(0, 1fr) 268px;
+          border-top-color:var(--line); }
+  #dock .dz { padding:10px 14px 12px; display:flex; flex-direction:column; gap:7px; min-width:0; }
+  #dock .dz + .dz { border-left:1px solid var(--line); }
+  #dock .h { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; line-height:14px; display:flex; justify-content:space-between; align-items:center; gap:8px; white-space:nowrap; }
+  #dock .h .hint { color:var(--dim); text-transform:none; letter-spacing:0; font-size:11px; }
+  #dock .h .hint .ok { color:#5fe0a0; } #dock .h .hint .no { color:#ff8a7a; }
+  #coordsBody { height:34px; display:flex; flex-direction:column; justify-content:center; font-variant-numeric:tabular-nums; }
+  #coordsBody .v { display:flex; justify-content:space-between; gap:10px; font-size:12.5px; line-height:17px; white-space:nowrap; } #coordsBody .v span:first-child { color:var(--dim); }
+  #timebar .tctl { height:34px; display:flex; gap:8px; align-items:center; justify-content:center; }
+  #timebar .tctl button, #timebar select, #timebar input { height:34px; }
+  #timebar .play { display:flex; } #timebar .play button { padding:0 10px; min-width:38px; } #dateIn { width:170px; } #speed { min-width:128px; }
+  #zoomctl { height:34px; display:flex; gap:6px; }
+  #zoomctl button { flex:1 1 0; min-width:0; padding:0; height:34px; font-size:10.5px; letter-spacing:.02em; }
+  #zoombox .h input[type=range] { flex:1; min-width:60px; max-width:150px; height:14px; margin:0; }
+  #links { grid-column:1 / -1; border-top:1px solid var(--line); padding:5px 10px; display:flex; align-items:center; gap:4px; font-size:12px; overflow-x:auto; white-space:nowrap; scrollbar-width:none; }
+  #links::-webkit-scrollbar { display:none; }
+  #links .lk { color:#b9cdf5; text-decoration:underline; text-decoration-color:#4a5f9488; text-underline-offset:3px; padding:2px 6px; }
+  #links .lk:hover, #links .lk:focus-visible { color:#fff; background:#00b5e226; text-decoration-color:var(--esa); outline:none; }
+  #links .lk.main { color:#fff; font-weight:600; text-decoration:none; border:1px solid #34436a; }
+  #links .lk.main:hover { border-color:var(--esa); }
+  #links .ext { font-size:11px; margin-left:2px; color:var(--esa); }
+  #links .grow { flex:1; } #links .lbl { color:var(--dim); font-size:10.5px; text-transform:uppercase; letter-spacing:.12em; margin-right:2px; }
+  @media (max-width:1240px) { #dateIn { width:150px; } #speed { min-width:110px; } }
+  @media (max-width:1270px) {                             /* tablets: time on its own row, cursor and zoom side by side */
+    #brand { max-height:calc(100vh - 236px); } #tools { max-height:calc(100vh - 236px); }
+    #dock { left:10px; right:10px; bottom:10px; grid-template-columns:1fr 1fr; }
+    #dock #timebar { grid-column:1 / -1; order:-1; } #timebar .tctl { flex-wrap:wrap; height:auto; min-height:34px; } #dock #coords { border-left:0; border-top:1px solid var(--line); } #dock #zoombox { border-top:1px solid var(--line); }
+  }
+  @media (max-width:600px) {                             /* phones: hover read-out is useless on touch, so drop it */
+    #brand, #tools { max-height:calc(100vh - 330px); }
+    #dock { grid-template-columns:1fr; } #dock #coords { display:none; } #dock #zoombox { border-left:0; }
+    #timebar .tctl { flex-wrap:wrap; height:auto; } #dateIn { width:150px; } #links { flex-wrap:wrap; white-space:normal; } #links .grow { display:none; }
+  }
+  #timebar .hhr { display:flex; align-items:center; gap:10px; } #tSpan { color:#8fa3cf; }
+  #jump { width:128px; }
+  /* medium screens: narrower side panels and controls so everything stays on one row */
+  @media (max-width:1400px) { #speed { min-width:100px; width:104px; } #jump { width:112px; } #dateIn { width:150px; } }
+  @media (max-width:1300px) { #dock { grid-template-columns:312px minmax(0, 1fr) 252px; } #dock .h { letter-spacing:.12em; } }
+  @media (max-width:1270px) { #dock { grid-template-columns:1fr 1fr; } }
+  @media (max-width:600px) { #dock { grid-template-columns:1fr; } #tSpan { display:none; } }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">Loading sky…</div>
+
+<div class="card" id="brand">
+  <div class="title">XARVIS <span>Where is SPHEREx?</span></div>
+  <div id="clock">…</div>
+  <div id="clockSub"><span class="badge live" id="badge">LIVE</span><span id="clockNote"></span></div>
+  <div id="status"></div>
+  <button class="ghost" id="advBtn" style="text-align:left">Advanced orbital parameters <span id="advWarn"></span><span id="advArrow">▾</span></button>
+  <div id="advScroll" hidden><div id="warns"></div><div id="adv"></div><div id="sources" class="dim"></div></div>
+</div>
+
+<div class="card" id="tools">
+  <div class="row"><button id="reset">Reset view</button><button id="spin">Spin</button></div>
+  <div id="spinPanel" hidden>
+    <div class="grp">Spin axis <span id="spinVal">0°</span></div>
+    <input id="spinAxis" type="range" min="-90" max="90" step="1" value="0" title="Tilt of the spin axis: 0° = vertical on screen, ±90° = horizontal">
+    <div class="row"><button id="spinV">Vertical</button><button id="spinH">Horizontal</button><button id="spinE" title="Spin about the ecliptic north pole">Ecliptic</button></div>
+  </div>
+  <button class="ghost" id="gotoBtn" style="text-align:left">Go to sky coordinates <span id="gotoArrow">▾</span></button>
+  <div id="gotoChip"></div>
+  <div id="gotoPanel" hidden>
+    <label class="gl">Test targets<select id="gTarget"><option value="">Choose a target…</option></select></label>
+    <div class="fgrid">
+      <label class="wide">Right ascension<input id="gRA" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. 08 55 10.83 or 133.795"></label>
+      <label class="wide">Declination<input id="gDec" type="text" spellcheck="false" autocomplete="off" placeholder="e.g. -07 14 42.5 or -7.245"></label>
+    </div>
+    <details class="adv"><summary>Advanced</summary>
+      <label class="gl">Patch size (SPHEREx pixels per side)<input id="gPix" type="number" min="10" max="2000" step="10" value="50"></label>
+      <div id="gPixInfo" class="dim"></div>
+    </details>
+    <div id="gMsg" class="dim">J2000 / ICRS: hours-minutes-seconds and degrees-arcminutes-arcseconds, or decimal degrees.</div>
+    <button id="gGo" class="primary">Show this patch</button>
+  </div>
+  <button class="ghost" id="trackBtn" style="text-align:left">Track objects <span id="trackN"></span><span id="trackArrow">▾</span></button>
+  <div id="trackChips"></div>
+  <div id="trackPanel" hidden>
+    <input id="tq" type="search" spellcheck="false" placeholder="Search by name or number" autocomplete="off">
+    <div class="fgrid">
+      <label>Show<select id="fShow">
+        <optgroup label="Known objects"><option value="all">All known objects</option><option value="planets">Planets and Moon</option><option value="neo">Near-Earth objects</option><option value="belt">Main-belt asteroids</option><option value="trojan">Jupiter Trojans</option><option value="tno">Kuiper belt</option><option value="lookup">Looked up (JPL)</option></optgroup>
+        <optgroup label="Unknown objects"><option value="candidate">SPHEREx candidates</option></optgroup></select></label>
+      <label>Only<select id="fOnly"><option value="any">No extra filter</option><option value="vis">Visible to SPHEREx now</option><option value="near">Near Earth now</option><option value="pha">Potentially hazardous</option><option value="big">Over 100 km</option><option value="measured">Size measured</option></select></label>
+    </div>
+    <div id="tCount" class="dim"></div>
+    <div id="tList"></div>
+    <button id="tLookup" hidden></button>
+    <div id="tMsg" class="dim"></div>
+  </div>
+  <button class="ghost" id="layersBtn" style="text-align:left">Layers ▾</button>
+  <div id="layers" hidden>
+    <label><input type="checkbox" id="cStars" checked>Stars</label>
+    <label><input type="checkbox" id="cLines">Constellations &amp; names</label>
+    <label><input type="checkbox" id="cOrbits" checked>Orbits</label>
+    <label><input type="checkbox" id="cBelts" checked>Asteroids &amp; Kuiper belt</label>
+    <div class="grp">What SPHEREx can see</div>
+    <label title="Sky SPHEREx can point at right now: at least 91° from the Sun and not behind Earth"><input type="checkbox" id="cVisNow" checked><i class="sw now"></i>Visible now</label>
+    <label title="Sky allowed by the Sun limit (at least 91° from the Sun); Earth moves out of the way during each 98-minute orbit"><input type="checkbox" id="cVisAll"><i class="sw all"></i>Visible overall (Sun limit)</label>
+  </div>
+</div>
+
+<div class="card" id="dock">
+  <div class="dz" id="coords"><div class="h">Under the cursor <span class="hint" id="cHint">double-click to analyse</span></div><div id="coordsBody"></div></div>
+  <div class="dz" id="timebar">
+    <div class="h">Time · UTC <span class="hhr"><span class="hint" id="tSpan"></span><span class="hint" id="tHint"></span></span></div>
+    <div class="tctl">
+      <span class="play"><button id="rev" title="Play backward">◀</button><button id="pause" title="Pause (Space)">❚❚</button><button id="fwd" title="Play forward">▶</button></span>
+      <select id="speed" title="Playback speed"></select>
+      <input type="text" id="dateIn" spellcheck="false" title="UTC date, e.g. 2030-06-01 12:00 or -500-03-01">
+      <button id="go">Go</button>
+      <select id="jump" title="Jump to the SPHEREx data"><option value="">Jump to…</option><option value="first">First data · 2025-05-01 00:00 UTC</option><option value="latest" id="jumpLatest">Latest data</option></select>
+      <button id="live" class="primary" title="Back to the real time (L)">Live</button>
+    </div>
+  </div>
+  <div class="dz" id="zoombox">
+    <div class="h">Zoom <input id="zoom" type="range" min="0" max="1" step="0.0005" value="0" title="Zoom"></div>
+    <div id="zoomctl"><button id="zFar" title="Zoom out past the solar system">Far out</button><button id="zSys">Planets</button><button id="zSphx" class="primary">SPHEREx</button></div>
+  </div>
+  <div id="links"><a href="/about" class="lk main">ⓘ About XARVIS</a><a href="#" id="helpLink" class="lk main">⌨ Controls</a><span class="grow"></span><span class="lbl">Data sources</span><a href="https://gea.esac.esa.int/archive/" target="_blank" rel="noopener" class="lk" title="Star positions: ESA Hipparcos new reduction, ESA archive (opens in a new tab)">ESA Hipparcos<span class="ext">↗</span></a><a href="https://ssd.jpl.nasa.gov/planets/eph_export.html" target="_blank" rel="noopener" class="lk" title="Planets and Moon: NASA/JPL planetary ephemerides (opens in a new tab)">JPL DE440<span class="ext">↗</span></a><a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noopener" class="lk" title="SPHEREx trajectory: NASA/JPL Horizons (opens in a new tab)">JPL Horizons<span class="ext">↗</span></a><a href="https://ssd.jpl.nasa.gov/tools/sbdb_query.html" target="_blank" rel="noopener" class="lk" title="Asteroids, Trojans, Kuiper belt: NASA/JPL Small-Body Database (opens in a new tab)">JPL SBDB<span class="ext">↗</span></a><a href="https://irsa.ipac.caltech.edu/Missions/spherex.html" target="_blank" rel="noopener" class="lk" title="SPHEREx mission facts and data: NASA/IPAC IRSA (opens in a new tab)">IRSA SPHEREx<span class="ext">↗</span></a><a href="https://github.com/Stellarium/stellarium-skycultures" target="_blank" rel="noopener" class="lk" title="Constellation figures and names: Stellarium sky cultures (opens in a new tab)">Stellarium<span class="ext">↗</span></a></div>
+</div>
+
+<div class="card" id="tip"></div>
+
+<!-- landing page: what this is and how to drive it -->
+<div id="fade" aria-hidden="true"></div>
+<div id="intro">
+  <div class="card" id="introCard" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="h">NASA Space Apps 2026 · Planet X and SPHEREx</div>
+    <h1 id="introTitle">XARVIS</h1>
+    <p class="lead">Follow NASA's SPHEREx infrared telescope live, and explore the sky it maps, with official NASA, ESA and IPAC data.</p>
+    <div class="keys">
+      <div><b>Drag</b><span>rotate</span></div>
+      <div><b>Scroll</b><span>zoom</span></div>
+      <div><b>Double-click</b><span>analyse a point of the sky</span></div>
+      <div><b>Time bar</b><span>travel through time</span></div>
+    </div>
+    <details class="more"><summary>All controls</summary>
+      <div class="ctl">
+        <div><b>Right-drag / Shift-drag</b><span>roll the view</span></div>
+        <div><b>Hover</b><span>names and coordinates</span></div>
+        <div><b>Top right</b><span>go to coordinates, track objects, layers</span></div>
+        <div><b>Keyboard</b><span>Space pause · L live · arrows rotate · Q / E roll</span></div>
+      </div>
+    </details>
+    <div class="introBtns"><label class="dim small"><input type="checkbox" id="introSkip"> Don't show again</label><a href="/about" class="small">About</a><button id="introGo" class="primary">Start exploring</button></div>
+  </div>
+</div>
+
+<!-- double-click analysis popup: PLACEHOLDER. It collects the sky coordinates and shows what will be sent; the backend is not connected yet -->
+<div id="anaBack" hidden>
+  <div class="card" id="ana" role="dialog" aria-modal="true" aria-labelledby="anaTitle">
+    <div class="anaHead">
+      <div><div class="h">Sky point analysis</div><div id="anaTitle">…</div></div>
+      <button class="ghost" id="anaX" title="Close (Esc)">✕</button>
+    </div>
+    <div id="anaVis"></div>
+    <div id="anaRows"></div>
+    <div id="anaTarget"></div>
+    <div id="anaViz">
+      <div class="vh"><span id="anaVizTitle">The patch on this date</span><span class="dim">N ↑ · E ←</span></div>
+      <canvas id="anaMap" width="440" height="300"></canvas>
+      <div id="anaLegend" class="dim"></div>
+      <div id="spx">
+        <div class="spxHead"><span class="ph">SPHEREx images of this patch</span><span id="spxStatus" class="dim"></span></div>
+        <div id="spxStart"><label class="dim">Images <select id="spxN"><option value="10">10</option><option value="30" selected>30</option><option value="100">100</option><option value="300">all (up to 300)</option></select></label>
+          <button id="spxGo" class="primary">Load SPHEREx images</button></div>
+        <div id="spxProg" hidden><div class="bar"><i id="spxBar"></i></div></div>
+        <div id="spxPlayer" hidden>
+          <div class="spxView"><img id="spxImg" alt="SPHEREx image of the patch"><i id="spxRing"></i></div>
+          <div class="spxCtl"><button id="spxPlay" title="Play / pause">▶</button><input type="range" id="spxSlider" min="1" value="1">
+            <select id="spxMode" title="What to show"><option value="frames">Frames</option><option value="stack">Stack per detector</option><option value="diff">Difference: last − first visit</option></select>
+            <select id="spxDet" title="Detector array" hidden></select></div>
+          <div id="spxInfo"></div>
+          <canvas id="spxSpec" width="440" height="130"></canvas>
+          <div id="spxSrc" class="dim"></div>
+        </div>
+      </div>
+    </div>
+    <div id="anaSB"></div>
+    <details id="anaPayload"><summary>Data passed to the backend</summary><pre id="anaJSON"></pre></details>
+    <div class="row anaBtns"><button id="anaCopy">Copy coordinates</button><button id="anaClose" class="primary">Close</button></div>
+  </div>
+</div>
+<div id="perf"></div>
+
+<script>
+// =============================================================================== constants ===
+const AU_KM = 149597870.7, D2R = Math.PI/180, EPS = (84381.406/3600)*D2R, EARTH_R_KM = 6371, J2000 = 2451545.0;
+const COLORS = {Mercury:'#b5b5b5', Venus:'#e8cda2', Earth:'#4da3ff', Mars:'#e2724b', Jupiter:'#d9b38c', Saturn:'#e6d3a1',
+                Uranus:'#8fe3e8', Neptune:'#5b7bff', Moon:'#c9c9c9'};
+const PLANETS = ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune'];
+const RADIUS_KM = {Mercury:2440, Venus:6052, Earth:6371, Mars:3390, Jupiter:69911, Saturn:58232, Uranus:25362, Neptune:24622, Moon:1737};
+const RATES = [['Real time',1/86400],['1 min / s',1/1440],['10 min / s',10/1440],['1 hour / s',1/24],['1 day / s',1],['1 week / s',7],
+               ['1 month / s',30.4375],['1 year / s',365.25]];
+const MAX_YEARS = 200000;                                   // time range: +-200,000 years
+
+// ================================================================================== helpers ===
+const $ = id => document.getElementById(id);
+const cv = $('c'), mainCtx = cv.getContext('2d');
+let ctx = mainCtx;
+let W = 0, H = 0, DPR = 1, K = 1, resScale = 1;
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const smooth = (a, b, x) => { const t = clamp((x - a)/(b - a), 0, 1); return t*t*(3 - 2*t); };
+const dot = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const norm = a => { const n = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/n,a[1]/n,a[2]/n]; };
+const sub = (a,b) => [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
+const txt = {};
+const setText = (id, v) => { if (txt[id] !== v) { txt[id] = v; $(id).textContent = v; } };
+const setHTML = (id, v) => { if (txt[id] !== v) { txt[id] = v; $(id).innerHTML = v; } };
+const opt = {};
+for (const id of ['cStars','cLines','cOrbits','cBelts','cVisNow','cVisAll']) {
+  opt[id] = $(id).checked; $(id).addEventListener('change', () => { opt[id] = $(id).checked; opt.cNames = opt.cLines; });
+}
+opt.cNames = opt.cLines;
+async function api(path) { const r = await fetch(path); if (!r.ok) throw new Error(path + ' ' + r.status); return r.json(); }
+
+// ===================================================================================== time ===
+const nowJD = () => Date.now()/86400000 + 2440587.5;
+const sim = {jd: nowJD(), dir: 1, rateIdx: 0, live: true};
+const simRate = () => sim.dir*RATES[sim.rateIdx][1];                       // days per real second
+function jdToDate(jd) { return new Date((jd - 2440587.5)*86400000); }
+function fmtDate(jd, withSeconds = true) {
+  const d = jdToDate(jd); let y = d.getUTCFullYear();
+  const ys = y < 0 ? '−' + String(-y).padStart(4,'0') : (y > 9999 ? '+' + y : String(y).padStart(4,'0'));
+  const p = n => String(n).padStart(2,'0');
+  return `${ys}-${p(d.getUTCMonth()+1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` + (withSeconds ? `:${p(d.getUTCSeconds())}` : '');
+}
+function parseDate(s) {                                                    // "2030-06-01 12:00", "-500-03-01", "12000-1-1"
+  const m = s.trim().replace('−','-').match(/^([+-]?\d{1,6})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?\s*(?:UTC|Z)?$/i);
+  if (!m) return null;
+  const d = new Date(0); d.setUTCFullYear(+m[1], +m[2]-1, +m[3]); d.setUTCHours(+(m[4]||0), +(m[5]||0), +(m[6]||0), 0);
+  const jd = d.getTime()/86400000 + 2440587.5;
+  return isFinite(jd) ? jd : null;
+}
+const yearsSince2000 = jd => (jd - J2000)/365.25;
+// Time is limited to the span SPHEREx has data for: from the first science data to the latest observation.
+function advanceTime(dt) {
+  if (sim.live) { sim.jd = Math.min(nowJD(), dataLatest()); return; }
+  sim.jd += simRate()*dt;
+  if (sim.jd <= DATA_FIRST) { sim.jd = DATA_FIRST; sim.dir = 0; }                       // reached the first data: stop
+  else if (sim.jd >= dataLatest()) { sim.jd = dataLatest(); if (sim.dir > 0 && dataLatest() >= nowJD() - 1e-4) { sim.live = true; sim.rateIdx = 0; sim.dir = 1; $('speed').value = 0; } else sim.dir = 0; }   // reached now: go live
+}
+function setJD(jd) { sim.jd = clamp(jd, DATA_FIRST, dataLatest()); sim.live = false; }
+
+// =================================================================================== maths ===
+function matFromYawPitch(yaw, pitch) {
+  const r0 = [Math.cos(yaw), -Math.sin(yaw), 0];
+  const r1 = [Math.sin(pitch)*Math.sin(yaw), Math.sin(pitch)*Math.cos(yaw), Math.cos(pitch)];
+  return [r0, r1, cross(r0, r1)];
+}
+function lookAt(f, upHint) {
+  const z = [-f[0], -f[1], -f[2]];
+  if (Math.abs(dot(f, upHint)) > 0.99) upHint = [1,0,0];
+  const x = norm(cross(upHint, z));
+  return [x, cross(z, x), z];
+}
+// R: rows = screen right, screen up, toward-camera, expressed in the heliocentric ecliptic J2000 frame
+let R = matFromYawPitch(-0.5, 1.0);
+function orthonormalize() { const r0 = norm(R[0]); let r1 = R[1]; const d = dot(r1, r0); r1 = norm([r1[0]-d*r0[0], r1[1]-d*r0[1], r1[2]-d*r0[2]]); R = [r0, r1, cross(r0, r1)]; }
+function applyView(M) { R = [0,1,2].map(i => [0,1,2].map(j => M[i][0]*R[0][j] + M[i][1]*R[1][j] + M[i][2]*R[2][j])); orthonormalize(); }
+const Ry = a => [[Math.cos(a),0,Math.sin(a)],[0,1,0],[-Math.sin(a),0,Math.cos(a)]];
+const Rx = b => [[1,0,0],[0,Math.cos(b),-Math.sin(b)],[0,Math.sin(b),Math.cos(b)]];
+const Rz = c => [[Math.cos(c),-Math.sin(c),0],[Math.sin(c),Math.cos(c),0],[0,0,1]];
+function rotateBy(dx, dy, roll) { if (dx) applyView(Ry(dx)); if (dy) applyView(Rx(dy)); if (roll) applyView(Rz(roll)); }
+const toView = v => [dot(R[0],v), dot(R[1],v), dot(R[2],v)];
+const fromView = v => [R[0][0]*v[0]+R[1][0]*v[1]+R[2][0]*v[2], R[0][1]*v[0]+R[1][1]*v[1]+R[2][1]*v[2], R[0][2]*v[0]+R[1][2]*v[1]+R[2][2]*v[2]];
+function eq2ecl(ra, dec) {
+  const x = Math.cos(dec)*Math.cos(ra), y = Math.cos(dec)*Math.sin(ra), z = Math.sin(dec);
+  return [x, y*Math.cos(EPS) + z*Math.sin(EPS), -y*Math.sin(EPS) + z*Math.cos(EPS)];
+}
+function eqVec2ecl(v) { return [v[0], v[1]*Math.cos(EPS) + v[2]*Math.sin(EPS), -v[1]*Math.sin(EPS) + v[2]*Math.cos(EPS)]; }
+function ecl2eqVec(v) { return [v[0], v[1]*Math.cos(EPS) - v[2]*Math.sin(EPS), v[1]*Math.sin(EPS) + v[2]*Math.cos(EPS)]; }
+function ecl2eq(v) { const e = ecl2eqVec(v); return [(Math.atan2(e[1], e[0])/D2R + 360) % 360, Math.asin(clamp(e[2], -1, 1))/D2R]; }
+const GAL = [[-0.0548755604162154,-0.8734370902348850,-0.4838350155487132],[0.4941094278755837,-0.4448296299600112,0.7469822444972189],[-0.8676661490190047,-0.1980763734312015,0.4559837761750669]];
+function ecl2gal(v) { const e = ecl2eqVec(v), g = [dot(GAL[0], e), dot(GAL[1], e), dot(GAL[2], e)];
+  return [(Math.atan2(g[1], g[0])/D2R + 360) % 360, Math.asin(clamp(g[2], -1, 1))/D2R]; }
+function eclLonLat(v) { return [(Math.atan2(v[1], v[0])/D2R + 360) % 360, Math.asin(clamp(v[2]/Math.hypot(v[0],v[1],v[2]), -1, 1))/D2R]; }
+function fmtRA(deg, secs = true) { const t = deg/15, h = Math.floor(t), m = Math.floor((t-h)*60), s = Math.round(((t-h)*60-m)*60);
+  const [hh, mm, ss] = s === 60 ? (m === 59 ? [(h+1)%24, 0, 0] : [h, m+1, 0]) : [h, m, s];
+  return String(hh).padStart(2,'0') + 'h ' + String(mm).padStart(2,'0') + 'm' + (secs ? ' ' + String(ss).padStart(2,'0') + 's' : ''); }
+function fmtDec(deg, secs = true) { const a = Math.abs(deg), d = Math.floor(a), m = Math.floor((a-d)*60), s = Math.round(((a-d)*60-m)*60);
+  const [dd, mm, ss] = s === 60 ? (m === 59 ? [d+1, 0, 0] : [d, m+1, 0]) : [d, m, s];
+  return (deg < 0 ? '−' : '+') + String(dd).padStart(2,'0') + '° ' + String(mm).padStart(2,'0') + '′' + (secs ? ' ' + String(ss).padStart(2,'0') + '″' : ''); }
+const fmtRADec = v => { const [ra, dec] = ecl2eq(v); return fmtRA(ra, false) + ' / ' + fmtDec(dec, false); };
+
+// ======================================================================= Keplerian planets ===
+// Standish (JPL) mean elements, valid 1800-2050 (inner planets to ~0.01 deg, Jupiter-Neptune to ~0.2 deg); used only when time runs too fast for the
+// ephemeris track (>1 day per second), where positions cannot be told apart at the speed anyway.
+const KEP = {
+  Mercury:[0.38709927,0.00000037,0.20563593,0.00001906,7.00497902,-0.00594749,252.25032350,149472.67411175,77.45779628,0.16047689,48.33076593,-0.12534081],
+  Venus:[0.72333566,0.00000390,0.00677672,-0.00004107,3.39467605,-0.00078890,181.97909950,58517.81538729,131.60246718,0.00268329,76.67984255,-0.27769418],
+  Earth:[1.00000261,0.00000562,0.01671123,-0.00004392,-0.00001531,-0.01294668,100.46457166,35999.37244981,102.93768193,0.32327364,0.0,0.0],
+  Mars:[1.52371034,0.00001847,0.09339410,0.00007882,1.84969142,-0.00813131,-4.55343205,19140.30268499,-23.94362959,0.44441088,49.55953891,-0.29257343],
+  Jupiter:[5.20288700,-0.00011607,0.04838624,-0.00013253,1.30439695,-0.00183714,34.39644051,3034.74612775,14.72847983,0.21252668,100.47390909,0.20469106],
+  Saturn:[9.53667594,-0.00125060,0.05386179,-0.00050991,2.48599187,0.00193609,49.95424423,1222.49362201,92.59887831,-0.41897216,113.66242448,-0.28867794],
+  Uranus:[19.18916464,-0.00196176,0.04725744,-0.00004397,0.77263783,-0.00242939,313.23810451,428.48202785,170.95427630,0.40805281,74.01692503,0.04240589],
+  Neptune:[30.06992276,0.00026291,0.00859048,0.00005105,1.77004347,0.00035372,-55.12002969,218.45945325,44.96476227,-0.32241464,131.78422574,-0.00508664]};
+function kepler(name, T, Eanom) {                          // heliocentric ecliptic J2000 position (AU); T = Julian centuries from J2000
+  const q = KEP[name], a = q[0]+q[1]*T, e = q[2]+q[3]*T, inc = (q[4]+q[5]*T)*D2R, L = q[6]+q[7]*T, lp = q[8]+q[9]*T, om = q[10]+q[11]*T;
+  const w = (lp - om)*D2R, node = om*D2R;
+  let E = Eanom;
+  if (E === undefined) { const M = (((L - lp) % 360) + 540) % 360 - 180; const Mr = M*D2R; E = Mr + e*Math.sin(Mr);
+    for (let i = 0; i < 12; i++) E -= (E - e*Math.sin(E) - Mr)/(1 - e*Math.cos(E)); }
+  const xp = a*(Math.cos(E) - e), yp = a*Math.sqrt(1 - e*e)*Math.sin(E);
+  const cw = Math.cos(w), sw = Math.sin(w), co = Math.cos(node), so = Math.sin(node), ci = Math.cos(inc), si = Math.sin(inc);
+  return [(cw*co - sw*so*ci)*xp + (-sw*co - cw*so*ci)*yp, (cw*so + sw*co*ci)*xp + (-sw*so + cw*co*ci)*yp, (sw*si)*xp + (cw*si)*yp];
+}
+function kepOrbit(name, T, n = 181) { const o = []; for (let i = 0; i <= n; i++) o.push(kepler(name, T, 2*Math.PI*i/n)); return o; }
+
+// ============================================================================ server data ===
+let meta = null, track = null, snap = null, orbitsData = null, sky = null;
+const busy = {track: false, snap: false, orbits: false};
+const cr4 = (a, b, c, d, f) => 0.5*(2*b + (c - a)*f + (2*a - 5*b + 4*c - d)*f*f + (3*b - a - 3*c + d)*f*f*f);     // Catmull-Rom
+function trackSpec(rate) { return Math.abs(rate) <= 1/24 ? {half: 16, step: 0.05} : {half: 90, step: 0.25}; }
+function trackCovers(jd, t = track) { return !!t && jd >= t.jd0 + 2*t.step && jd <= t.jd0 + (t.n - 3)*t.step; }
+async function loadTrack(center, spec) {
+  busy.track = true;
+  try {
+    const n = Math.round(2*spec.half/spec.step) + 1, jd0 = center - spec.half;
+    const d = await api(`/api/track?jd0=${jd0}&step=${spec.step}&n=${n}`);
+    track = {jd0: d.jd0, step: d.step, n: d.n, pos: Float64Array.from(d.pos), moon: d.moon ? Float64Array.from(d.moon) : null};
+  } catch (e) { console.warn('track', e); retryAt.track = performance.now() + 3000; } finally { busy.track = false; }
+}
+async function loadSnap(jd) {
+  busy.snap = true;
+  try { const d = await api('/api/spherex?jd=' + jd); d.w = cross(d.n, d.u); snap = d; ringCache.key = null; } catch (e) { console.warn('spherex', e); retryAt.snap = performance.now() + 3000; } finally { busy.snap = false; }
+}
+async function loadOrbits(jd) {
+  busy.orbits = true;
+  try { const d = await api('/api/orbits?jd=' + jd); orbitsData = {jd: d.jd, orbits: d.orbits}; } catch (e) { console.warn('orbits', e); retryAt.orbits = performance.now() + 3000; } finally { busy.orbits = false; }
+}
+// Keep the data the scene needs ahead of the clock (single request in flight per kind)
+const retryAt = {track: 0, snap: 0, orbits: 0, meta: 0};
+const deOK = () => !!(meta && meta.de_start_jd);
+const outsideDE = jd => !deOK() || jd < meta.de_start_jd + 20 || jd > meta.de_end_jd - 20;     // JPL DE440s: 1849-12-26 .. 2150-01-22
+const isFar = jd => Math.abs(jd - J2000) > 5000*365.25;                                         // beyond this nobody can say where planets are
+function ensureData() {
+  const t = performance.now(), rate = simRate(), r = Math.abs(rate), jd = sim.jd, out = outsideDE(jd);
+  if (!deOK() && t > retryAt.meta) { retryAt.meta = t + 4000; api('/api/meta').then(m => { meta = m; }).catch(() => {}); }   // the kernel may still be loading
+  if (r <= 1 && !out && !busy.track && t > retryAt.track) {
+    const spec = trackSpec(rate), want = jd + rate*4;
+    if (!track || track.step !== spec.step || !trackCovers(want) || !trackCovers(jd)) loadTrack(want, spec);
+  }
+  const maxAge = clamp(r*2, 0.04, 5);
+  if (!busy.snap && t > retryAt.snap && (!snap || Math.abs(jd - snap.jd) > maxAge)) loadSnap(jd);
+  if (r <= 1 && !out && !busy.orbits && t > retryAt.orbits && (!orbitsData || Math.abs(jd - orbitsData.jd) > 150)) loadOrbits(jd);
+}
+
+// ================================================================================== the scene ===
+// `state` is what the drawing code reads. It is rebuilt every frame from the clock.
+let state = null;
+const kepOrbitCache = {key: null, orbits: null};
+const ringCache = {key: null, ring: null, moonJD: -1e12, moon: null};
+function circle(u, w, a, n = 120) {                                           // SPHEREx orbit: circle of radius a (AU) in the plane (u, w)
+  const out = []; for (let i = 0; i <= n; i++) { const t = 2*Math.PI*i/n, c = Math.cos(t)*a, s = Math.sin(t)*a; out.push([c*u[0]+s*w[0], c*u[1]+s*w[1], c*u[2]+s*w[2]]); }
+  return out;
+}
+function closeLoop(pts) {                                                     // same drift correction as the server's close_loop
+  const n = pts.length - 1, d = sub(pts[n], pts[0]);
+  const out = pts.map((p, i) => { const w = (i - n/2)/(n/2); return [p[0]-0.5*d[0]*w, p[1]-0.5*d[1]*w, p[2]-0.5*d[2]*w]; });
+  out[n] = out[0].slice(); return out;
+}
+function trackEval(jd, out) {                                                 // planets -> out.P[name], moon offset
+  const t = track, u = (jd - t.jd0)/t.step, i = Math.floor(u), f = u - i;
+  if (i < 1 || i > t.n - 3) return false;
+  const P = t.pos;
+  for (let b = 0; b < 8; b++) { const pos = out.P[PLANETS[b]];
+    for (let k = 0; k < 3; k++) pos[k] = cr4(P[((i-1)*8+b)*3+k], P[(i*8+b)*3+k], P[((i+1)*8+b)*3+k], P[((i+2)*8+b)*3+k], f); }
+  out.moon = null;
+  if (t.moon) { const M = t.moon, mo = out.moonBuf; for (let k = 0; k < 3; k++) mo[k] = cr4(M[(i-1)*3+k], M[i*3+k], M[(i+1)*3+k], M[(i+2)*3+k], f); out.moon = mo; }
+  return true;
+}
+function moonRingOffsets(jd) {                                                // the Moon's path over one month, around `jd`
+  if (!track || !trackCovers(jd - 13.7) || !trackCovers(jd + 13.7) || !track.moon) return null;
+  if (Math.abs(jd - ringCache.moonJD) < 1 && ringCache.moon) return ringCache.moon;
+  const tmp = {P: Object.fromEntries(PLANETS.map(n => [n, [0,0,0]])), moonBuf: [0,0,0]}, pts = [];
+  for (let k = 0; k <= 60; k++) { if (!trackEval(jd - 13.66 + 27.32*k/60, tmp) || !tmp.moon) return null; pts.push(tmp.moon.slice()); }
+  ringCache.moonJD = jd; ringCache.moon = closeLoop(pts); return ringCache.moon;
+}
+const scratch = {P: Object.fromEntries(PLANETS.map(n => [n, [0,0,0]])), moonBuf: [0,0,0], moon: null};
+function updateScene() {
+  if (!snap) return false;
+  const jd = sim.jd, T = (jd - J2000)/36525, rate = simRate();
+  const far = isFar(jd), out = outsideDE(jd), fast = Math.abs(rate) > 1 || out;     // too fast / outside JPL's DE440s: use JPL's mean orbital elements
+  const warns = [];
+  let from = 'track';
+  if (fast || !trackCovers(jd) || !trackEval(jd, scratch)) {
+    from = 'kepler';
+    for (const n of PLANETS) scratch.P[n] = kepler(n, T);
+    scratch.moon = null;
+  }
+  const planets = PLANETS.map(n => ({name: n, pos: scratch.P[n], radius_km: RADIUS_KM[n]}));
+  const E = scratch.P.Earth;
+  const byName = Object.fromEntries(planets.map(p => [p.name, p]));
+  if (scratch.moon) { const m = scratch.moon, mp = {name: 'Moon', pos: [E[0]+m[0], E[1]+m[1], E[2]+m[2]], radius_km: RADIUS_KM.Moon}; planets.push(mp); byName.Moon = mp; }
+  // SPHEREx: a circular orbit propagated from the latest server snapshot (real TLE/SGP4 state when available)
+  const a = snap.a_km/AU_KM, phi = 2*Math.PI*(jd - snap.jd)*1440/snap.period_min, cp = Math.cos(phi), sp_ = Math.sin(phi);
+  let off = [0,1,2].map(k => a*(cp*snap.u[k] + sp_*snap.w[k]));
+  const tr = snap.track;                                                     // real Horizons positions every 2 minutes: interpolate along them
+  if (tr && tr.length > 1 && jd >= tr[0][0] && jd <= tr[tr.length - 1][0]) {
+    let i = Math.min(tr.length - 2, Math.floor((jd - tr[0][0])/(tr[1][0] - tr[0][0])));
+    while (i > 0 && tr[i][0] > jd) i--; while (i < tr.length - 2 && tr[i + 1][0] < jd) i++;
+    const A = tr[i], B = tr[i + 1], f = (jd - A[0])/(B[0] - A[0]), ra = Math.hypot(A[1], A[2], A[3]), rb = Math.hypot(B[1], B[2], B[3]);
+    const ua = [A[1]/ra, A[2]/ra, A[3]/ra], ub = [B[1]/rb, B[2]/rb, B[3]/rb], om = Math.acos(clamp(dot(ua, ub), -1, 1)), so = Math.sin(om);
+    const k1 = so > 1e-9 ? Math.sin((1 - f)*om)/so : 1 - f, k2 = so > 1e-9 ? Math.sin(f*om)/so : f, rr = (ra + (rb - ra)*f)/AU_KM;
+    off = [0, 1, 2].map(k => rr*(k1*ua[k] + k2*ub[k]));
+  }
+  const pos = [E[0]+off[0], E[1]+off[1], E[2]+off[2]], r = Math.hypot(...pos);
+  if (ringCache.key !== snap) { ringCache.key = snap; ringCache.ring = circle(snap.u, snap.w, a); }
+  const eclp = eclLonLat(pos), offKm = Math.hypot(...off)*AU_KM;
+  const spherex = {pos, off, ring: ringCache.ring, helio_dist_au: r, ecl_lon_deg: eclp[0], ecl_lat_deg: eclp[1], earth_dist_km: offKm, altitude_km: offKm - EARTH_R_KM,
+                   period_min: snap.period_min, live: snap.live, source: snap.source, showMarker: Math.abs(rate) <= 1/24};
+  state = {planets, byName, E, sun_dir: norm([-E[0], -E[1], -E[2]]), spherex, moonOff: scratch.moon ? moonRingOffsets(jd) : null, from, bodies: null};
+  state.bodies = planets;
+  // honest warnings about what is approximate at this time / speed
+  const yr = 2000 + yearsSince2000(jd);
+  if (meta && jd < meta.launch_jd) warns.push('Before SPHEREx launched (12 Mar 2025): its orbit is hypothetical.');
+  else if (meta && jd < meta.science_start_jd) warns.push('SPHEREx was still in orbit checkout (science began 1 May 2025).');
+  else if (meta && jd > meta.science_end_jd) warns.push("After SPHEREx's nominal 25-month science mission (to mid-2027).");
+  if (!snap.live) warns.push('No live NASA/JPL Horizons data for SPHEREx at this date: its orbit is modelled from the official parameters (right height and plane, position along the orbit unknown).');
+  if (far) warns.push('Beyond ±5,000 years nobody can predict where the planets are: they are shown at arbitrary points on their mean orbits.');
+  else if (out) warns.push("Outside NASA/JPL's DE440 ephemeris (1850–2150): planets use JPL's mean orbital elements (about 0.2°), and the Moon is hidden.");
+  else if (from === 'kepler' && fast) warns.push('Fast playback: planets are on mean orbits (≤ 0.2° error), the Moon is hidden.');
+  if (Math.abs(yr - 2000) > 10000) warns.push('Star motion uses proper motion only; a few nearby stars are approximate this far away.');
+  if (Math.abs(rate) > 1/24 && Math.abs(rate) <= 1 && !out) warns.push('SPHEREx marker hidden at this speed (it orbits every 97 minutes).');
+  if (from === 'kepler' && !fast && busy.track) warns.push('Loading ephemeris…');
+  state.warns = warns;
+  // orbit lines
+  if (!fast && orbitsData) state.orbits = orbitsData.orbits;
+  else if (fast) { const key = Math.round(T/0.5); if (kepOrbitCache.key !== key) { kepOrbitCache.key = key; kepOrbitCache.orbits = Object.fromEntries(PLANETS.map(n => [n, kepOrbit(n, key*0.5)])); } state.orbits = kepOrbitCache.orbits; }
+  else state.orbits = null;
+  return true;
+}
+
+// ======================================================================= star motion ===
+// A star moves in a straight line at constant velocity. With only its proper motion known (Hipparcos has no
+// radial velocity) the new direction is  normalize(u0 + t * w),  where w = mu_alpha* e_alpha + mu_delta e_delta
+// (radians per year) and u0 is the J2000 direction. The distance cancels out.
+const MAS = Math.PI/180/3600/1000;
+let starYears = null;
+function updateStars(force) {
+  if (!sky) return;
+  const yrs = yearsSince2000(sim.jd);
+  if (!force && starYears !== null && Math.abs(yrs - starYears) < 0.005) return;
+  starYears = yrs;
+  const n = sky.n, u0 = sky.u0, w = sky.w, v = sky.v;
+  for (let i = 0; i < n; i++) {
+    const x = u0[i*3] + yrs*w[i*3], y = u0[i*3+1] + yrs*w[i*3+1], z = u0[i*3+2] + yrs*w[i*3+2], l = 1/Math.hypot(x, y, z);
+    v[i*3] = x*l; v[i*3+1] = y*l; v[i*3+2] = z*l;
+  }
+  if (Math.abs(yrs - sky.linesYears) > 0.02 || force) rebuildLines(yrs);
+}
+// Unit vectors along the great-circle arc between two points, <= 1.5 degrees apart (segments can be 30+ degrees)
+function arcPoints(a, b, out) {
+  const d = clamp(dot(a, b), -1, 1), th = Math.acos(d), n = Math.max(1, Math.ceil(th/(1.5*D2R))), sn = Math.sin(th);
+  for (let k = 0; k < n; k++) { const t = k/n, w0 = sn < 1e-9 ? 1 - t : Math.sin((1 - t)*th)/sn, w1 = sn < 1e-9 ? t : Math.sin(t*th)/sn;
+    out.push(w0*a[0] + w1*b[0], w0*a[1] + w1*b[1], w0*a[2] + w1*b[2]); }
+}
+function rebuildLines(yrs) {
+  const v = sky.v, star = i => [v[i*3], v[i*3+1], v[i*3+2]], lines = [];
+  for (const poly of sky.figures) { const pts = [];
+    for (let k = 0; k + 1 < poly.length; k++) arcPoints(star(poly[k]), star(poly[k+1]), pts);
+    pts.push(...star(poly[poly.length - 1])); lines.push(Float32Array.from(pts)); }
+  sky.lines = lines; sky.linesYears = yrs;
+}
+const BIN_COL = ['#9bb0ff','#cad8ff','#f8f7ff','#fff4e8','#ffe7bf','#ffd2a1','#ffb878','#ff9e5e'];
+async function loadSky() {
+  const d = await api('/static/sky.json');
+  const n = d.stars.length, u0 = new Float64Array(n*3), w = new Float64Array(n*3), v = new Float64Array(n*3), r = new Float32Array(n), bins = BIN_COL.map(() => []);
+  const hipIdx = new Map(), bright = [];
+  d.stars.forEach(([ra, dec, mag, bv, hip, pmra, pmdec], i) => {
+    const a = ra*D2R, dc = dec*D2R;
+    const ea = eqVec2ecl([-Math.sin(a), Math.cos(a), 0]), ed = eqVec2ecl([-Math.sin(dc)*Math.cos(a), -Math.sin(dc)*Math.sin(a), Math.cos(dc)]), p = eq2ecl(a, dc);
+    for (let k = 0; k < 3; k++) { u0[i*3+k] = p[k]; v[i*3+k] = p[k]; w[i*3+k] = (pmra*ea[k] + pmdec*ed[k])*MAS; }
+    r[i] = Math.max(0.55, 2.8 - 0.42*mag);
+    bins[clamp(Math.round((bv + 0.3)/0.3), 0, 7)].push(i);
+    hipIdx.set(hip, i); if (mag <= 4.6) bright.push(i);
+  });
+  const nameOf = new Map(), names = [];
+  d.names.forEach(([hip, name]) => { const i = hipIdx.get(hip); if (i !== undefined) { nameOf.set(i, name); names.push({i, name}); } });
+  names.sort((p, q) => d.stars[p.i][2] - d.stars[q.i][2]);          // brightest first, so they win label space
+  const figures = []; for (const abbr in d.cl) for (const poly of d.cl[abbr]) figures.push(poly);
+  const bounds = d.bounds.map(flat => { const o = new Float32Array(flat.length/2*3);
+    for (let k = 0; k < flat.length; k += 2) o.set(eq2ecl(flat[k]*D2R, flat[k+1]*D2R), k/2*3); return o; });
+  sky = {n, u0, w, v, r, bins: bins.map(b => Int32Array.from(b)), bright, nameOf, names, figures, lines: [], linesYears: 1e9, bounds,
+         mag: d.stars.map(s => s[2]), bv: d.stars.map(s => s[3]), hip: d.stars.map(s => s[4]), pm: d.stars.map(s => [s[5], s[6]]),
+         labels: d.labels.map(([ra, dec, name, en]) => ({v: eq2ecl(ra*D2R, dec*D2R), name, en}))};
+  $('sources').textContent = d.attribution + ' Planets and Moon: NASA/JPL DE440s ephemeris. SPHEREx orbit: NASA/JPL Horizons. Asteroids, Trojans and Kuiper belt: NASA/JPL Small-Body Database. SPHEREx facts: IPAC SPHEREx Explanatory Supplement v2.1.';
+  updateStars(true);
+}
+
+// ============================================================================== resolution ===
+function applyRes() { W = innerWidth; H = innerHeight; K = Math.max(0.6, DPR*resScale); cv.width = Math.round(W*K); cv.height = Math.round(H*K); mainCtx.setTransform(K,0,0,K,0,0); }
+function resize() { DPR = Math.min(window.devicePixelRatio || 1, 2); applyRes(); }
+
+// ================================================================================ projection ===
+const sFit = () => Math.min(W, H)/2/36, sFar = () => sFit()/40, sMax = () => 2.2e6*Math.min(W, H)/800;
+const scaleOf = t => sFar()*Math.pow(sMax()/sFar(), t);
+const tFit = () => Math.log(sFit()/sFar())/Math.log(sMax()/sFar());
+let zt = 0, ztGoal = 0, anim = null;
+function centerOf(s) { if (!state) return [0,0,0]; if (focusId && tracked.has(focusId)) { const f = tracked.get(focusId).pos(); if (f) return f; } const p = state.spherex.pos, k = Math.max(0, 1 - sFit()/s); return [p[0]*k, p[1]*k, p[2]*k]; }
+// Constellations fade in only once you are well outside the planets, and gradually: the fade is spread evenly over the
+// zoom slider (logarithmic in scale) from 1/3 of the planets view all the way out to the "Far out" view.
+const FADE_START = 0.33, FADE_FULL = 0.025;               // 0.025 x sFit = the "Far out" view
+const constellationFade = s => smooth(0, 1, Math.log(FADE_START*sFit()/s)/Math.log(FADE_START/FADE_FULL));
+function project(p, c, s) { const v = toView([p[0]-c[0], p[1]-c[1], p[2]-c[2]]); return [W/2 + v[0]*s, H/2 - v[1]*s, v[2]]; }
+const skyScale = () => 0.7*Math.max(W, H);
+function skyXY(v, SK, clampIt) { let a = -v[2]; if (a < -0.9) { if (!clampIt) return null; a = -0.97; } const k = SK/(1 + a); return [W/2 + v[0]*k, H/2 - v[1]*k]; }
+function fmtLen(au) { const km = au*AU_KM; if (au >= 0.1) return au.toFixed(2) + ' AU'; if (km >= 1e6) return (km/1e6).toFixed(2) + ' million km'; return Math.round(km).toLocaleString() + ' km'; }
+const distStr = au => au < 0.02 ? Math.round(au*AU_KM).toLocaleString() + ' km' : au.toFixed(3) + ' AU';
+
+// ---- clipping: huge off-screen paths are what made zooming stutter, so every segment is clipped to the viewport
+const MARGIN = 40;
+function clipSeg(x0, y0, x1, y1) {
+  const xmin = -MARGIN, xmax = W + MARGIN, ymin = -MARGIN, ymax = H + MARGIN, dx = x1 - x0, dy = y1 - y0; let t0 = 0, t1 = 1;
+  const p = [-dx, dx, -dy, dy], q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0];
+  for (let i = 0; i < 4; i++) { if (p[i] === 0) { if (q[i] < 0) return null; } else { const r = q[i]/p[i];
+    if (p[i] < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; } } }
+  return [x0 + t0*dx, y0 + t0*dy, x0 + t1*dx, y0 + t1*dy];
+}
+const onScr = (x, y) => x >= -MARGIN && x <= W + MARGIN && y >= -MARGIN && y <= H + MARGIN;
+function makePen() { let has = false, lx = 0, ly = 0;
+  return { gap() { has = false; }, line(x0, y0, x1, y1) {
+    const seg = onScr(x0, y0) && onScr(x1, y1) ? [x0, y0, x1, y1] : clipSeg(x0, y0, x1, y1);
+    if (!seg) { has = false; return; }
+    if (!has || seg[0] !== lx || seg[1] !== ly) ctx.moveTo(seg[0], seg[1]);
+    ctx.lineTo(seg[2], seg[3]); lx = seg[2]; ly = seg[3]; has = true; } }; }
+// closed path of heliocentric points (optionally offset by `base`), inline projection, clipped
+function polyline(pts, c, s, stride = 1, base) {
+  const R0 = R[0], R1 = R[1], hw = W/2, hh = H/2, n = pts.length, pen = makePen(), bx = base ? base[0] : 0, by = base ? base[1] : 0, bz = base ? base[2] : 0;
+  ctx.beginPath(); let px = 0, py = 0, first = true;
+  const at = i => { const p = pts[i], dx = p[0]+bx-c[0], dy = p[1]+by-c[1], dz = p[2]+bz-c[2]; return [hw + (R0[0]*dx + R0[1]*dy + R0[2]*dz)*s, hh - (R1[0]*dx + R1[1]*dy + R1[2]*dz)*s]; };
+  for (let i = 0; i < n; i += stride) { const [x, y] = at(i); if (!first) pen.line(px, py, x, y); px = x; py = y; first = false; }
+  if ((n - 1) % stride) { const [x, y] = at(n - 1); pen.line(px, py, x, y); }
+  ctx.stroke();
+}
+const maxR = pts => { let m = 0; for (const p of pts) m = Math.max(m, Math.hypot(p[0], p[1], p[2])); return m; };
+const radiiCache = new WeakMap();
+function orbitRadii(set) { if (!set) return {}; if (!radiiCache.has(set)) { const r = {}; for (const k in set) r[k] = maxR(set[k]); radiiCache.set(set, r); } return radiiCache.get(set); }
+function strokeOrbits(set, c, s, suffix) {
+  const radii = orbitRadii(set);
+  for (const name in set) { const perim = 2*Math.PI*(radii[name] || 1)*s; if (perim < 8) continue;
+    ctx.strokeStyle = COLORS[name] + suffix; polyline(set[name], c, s, clamp(Math.floor(3*set[name].length/perim), 1, 16)); }
+}
+function drawGreatPath(pts, SK) { const pen = makePen(); let px = 0, py = 0, ok = false;
+  for (const p of pts) { const q = skyXY(toView(p), SK); if (!q) { ok = false; pen.gap(); continue; } if (ok) pen.line(px, py, q[0], q[1]); px = q[0]; py = q[1]; ok = true; } }
+function drawVecPath(vs, SK) { const R0 = R[0], R1 = R[1], R2 = R[2], hw = W/2, hh = H/2, pen = makePen(); let px = 0, py = 0, ok = false;
+  for (let i = 0; i < vs.length; i += 3) { const x = vs[i], y = vs[i+1], z = vs[i+2], a = -(R2[0]*x + R2[1]*y + R2[2]*z);
+    if (a < -0.9) { ok = false; pen.gap(); continue; }
+    const k = SK/(1 + a), qx = hw + (R0[0]*x + R0[1]*y + R0[2]*z)*k, qy = hh - (R1[0]*x + R1[1]*y + R1[2]*z)*k;
+    if (ok) pen.line(px, py, qx, qy); px = qx; py = qy; ok = true; } }
+function smallCircle(center, radDeg, n = 120) {
+  const c = norm(center), p1 = norm(cross(c, Math.abs(c[2]) < 0.9 ? [0,0,1] : [1,0,0])), p2 = cross(c, p1), a = radDeg*D2R, out = [];
+  for (let i = 0; i <= n; i++) { const f = i/n*2*Math.PI; out.push([0,1,2].map(k => Math.cos(a)*c[k] + Math.sin(a)*(Math.cos(f)*p1[k] + Math.sin(f)*p2[k]))); }
+  return out;
+}
+
+// =============================================================================== hover tips ===
+let hits = [], cursor = null, dragging = false, tipShown = '';
+function addHit(x, y, r, prio, html) { if (x < -20 || x > W+20 || y < -20 || y > H+20) return; hits.push({x, y, r: Math.max(r, 8), prio, html}); }
+function tipHTML(title, kind, rows, note) {
+  return `<b>${title}</b>${kind ? `<span class="sub">${kind}</span>` : ''}` + (rows.length ? '<table>' + rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('') + '</table>' : '') + (note ? `<div class="note">${note}</div>` : '');
+}
+function bodyRows(pos, viewer, viewerName) {
+  const r = Math.hypot(...pos), rows = [['Heliocentric r', r.toFixed(3) + ' AU'], ['Ecl. lon / lat', ((Math.atan2(pos[1], pos[0])/D2R + 360) % 360).toFixed(2) + '° / ' + (Math.asin(pos[2]/r)/D2R).toFixed(2) + '°'], ['X, Y, Z (AU)', pos.map(v => v.toFixed(3)).join(', ')]];
+  if (viewer) { const v = sub(pos, viewer), d = Math.hypot(...v); if (d > 1e-12) { rows.push(['From ' + viewerName, distStr(d)]); rows.push(['RA / Dec (J2000)', fmtRADec(norm(v))]); } }
+  return rows;
+}
+function pickHit() {
+  const tip = $('tip'); let best = null, bs = 1e9;
+  if (cursor && !dragging) for (const h of hits) { const d = Math.hypot(h.x - cursor[0], h.y - cursor[1]); if (d <= h.r) { const sc = d/h.r - h.prio; if (sc < bs) { bs = sc; best = h; } } }
+  cv.classList.toggle('hit', !!best);
+  if (!best) { if (tipShown !== '') { tip.style.display = 'none'; tipShown = ''; } return; }
+  const html = typeof best.html === 'function' ? best.html() : best.html;
+  if (html !== tipShown) { tip.innerHTML = html; tipShown = html; tip.style.display = 'block'; }
+  tip.style.left = Math.min(W - tip.offsetWidth - 8, cursor[0] + 16) + 'px'; tip.style.top = Math.min(H - tip.offsetHeight - 8, cursor[1] + 16) + 'px';
+}
+const glowCache = {};
+function drawGlow(x, y, r, col) {
+  let c = glowCache[col];
+  if (!c) { c = glowCache[col] = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32,32,0,32,32,32);
+    gr.addColorStop(0, col + 'ff'); gr.addColorStop(.25, col + '88'); gr.addColorStop(1, col + '00'); g.fillStyle = gr; g.fillRect(0,0,64,64); }
+  ctx.drawImage(c, x - r, y - r, 2*r, 2*r);
+}
+
+// ==================================================================================== sky ===
+function paintStars(SK, sf) {
+  const v = sky.v, R0 = R[0], R1 = R[1], R2 = R[2], hw = W/2, hh = H/2;
+  sky.bins.forEach((idx, b) => {
+    ctx.fillStyle = BIN_COL[b]; ctx.beginPath();
+    for (let j = 0; j < idx.length; j++) {
+      const i = idx[j], x = v[i*3], y = v[i*3+1], z = v[i*3+2], a = -(R2[0]*x + R2[1]*y + R2[2]*z);
+      if (a < -0.9) continue;
+      const k = SK/(1 + a), px = hw + (R0[0]*x + R0[1]*y + R0[2]*z)*k, py = hh - (R1[0]*x + R1[1]*y + R1[2]*z)*k;
+      if (px < -6 || px > W+6 || py < -6 || py > H+6) continue;
+      const r = sky.r[i]*sf; if (r < 1) ctx.rect(px - r, py - r, 2*r, 2*r); else { ctx.moveTo(px + r, py); ctx.arc(px, py, r, 0, 6.2832); }
+    }
+    ctx.fill();
+  });
+}
+function paintLines(SK) {
+  if (opt.cLines) { ctx.strokeStyle = '#4a6fb0'; ctx.lineWidth = 1.1; ctx.beginPath(); for (const l of sky.lines) drawVecPath(l, SK); ctx.stroke(); }
+  if (opt.cNames) drawNames(SK);
+}
+// ---- label placement: a name is only drawn if it does not overlap one already placed; otherwise it tries nearby spots,
+// and is hidden until there is room (zoom in or rotate and it appears).
+const textW = {};
+function measure(font, text) { const k = font + '|' + text; if (textW[k] === undefined) { ctx.font = font; textW[k] = ctx.measureText(text).width; } return textW[k]; }
+let labelRects = [], baseRects = [];                          // labelRects: rectangles drawn this frame (read by the tests); baseRects: space reserved first
+let uiRectsCache = [], uiRectsT = 0;
+function uiReserved() {                                       // screen areas covered by the panels
+  const t = performance.now();
+  if (t - uiRectsT > 300) { uiRectsT = t; uiRectsCache = ['brand', 'tools', 'dock'].map($).filter(e => e.offsetParent !== null).map(e => { const r = e.getBoundingClientRect(); return [r.left - 4, r.top - 4, r.right + 4, r.bottom + 4]; }); }
+  return uiRectsCache;
+}
+const hitsRect = (r, list) => { for (const q of list) if (r[0] < q[2] + 3 && r[2] + 3 > q[0] && r[1] < q[3] + 2 && r[3] + 2 > q[1]) return true; return false; };
+function placeLabel(text, font, x, y, tries) {                // tries: [[dx, dy], ...] top-left offsets from (x, y)
+  const w = measure(font, text), h = 13;
+  for (const [dx, dy] of tries) {
+    const lx = x + dx(w), ly = y + dy, r = [lx, ly - h + 2, lx + w, ly + 3];
+    if (r[0] < 4 || r[2] > W - 4 || r[1] < 4 || r[3] > H - 4 || hitsRect(r, labelRects)) continue;
+    labelRects.push(r); ctx.font = font; ctx.fillText(text, lx, ly); return true;
+  }
+  return false;
+}
+function drawNames(SK) {
+  labelRects = baseRects.slice();
+  const cf = 'italic 11px system-ui', sf = '11px system-ui', pos = [];
+  for (const l of sky.labels) { const q = skyXY(toView(l.v), SK); if (q && q[0] > 0 && q[0] < W && q[1] > 0 && q[1] < H) pos.push([l, q, Math.hypot(q[0] - W/2, q[1] - H/2)]); }
+  pos.sort((a, b) => a[2] - b[2]);                              // labels near the middle of the view get first pick of the space
+  ctx.fillStyle = '#5f7fc0';
+  for (const [l, q] of pos) placeLabel(l.name, cf, q[0], q[1], [[w => -w/2, 0], [w => -w/2, -15], [w => -w/2, 15], [w => -w/2, -30], [w => -w/2, 30], [w => 8, -8], [w => -w - 8, -8]]);
+  ctx.fillStyle = '#c9d6ff'; const v = sky.v;
+  for (const s of sky.names) {                                  // brightest stars first (sky.names is sorted by magnitude)
+    const q = skyXY(toView([v[s.i*3], v[s.i*3+1], v[s.i*3+2]]), SK);
+    if (q && q[0] > 0 && q[0] < W && q[1] > 0 && q[1] < H) placeLabel(s.name, sf, q[0], q[1], [[w => 6, -5], [w => -w - 6, -5], [w => 6, 12], [w => -w - 6, 12]]);
+  }
+}
+function drawStarfield(alpha, fade = 1) {
+  if (!sky) return;
+  const SK = skyScale(), sf = 1;
+  if (opt.cStars) { ctx.globalAlpha = alpha; paintStars(SK, sf); ctx.globalAlpha = 1; }
+  if ((opt.cLines || opt.cNames) && fade > 0.01) { ctx.globalAlpha = alpha*fade; paintLines(SK); ctx.globalAlpha = 1; }
+  if (opt.cStars && cursor) {
+    const v = sky.v, R0 = R[0], R1 = R[1], R2 = R[2];
+    for (const i of sky.bright) {
+      const x = v[i*3], y = v[i*3+1], z = v[i*3+2], a = -(R2[0]*x + R2[1]*y + R2[2]*z); if (a < -0.9) continue;
+      const k = SK/(1 + a), px = W/2 + (R0[0]*x + R0[1]*y + R0[2]*z)*k, py = H/2 - (R1[0]*x + R1[1]*y + R1[2]*z)*k;
+      if (Math.abs(px - cursor[0]) > 10 || Math.abs(py - cursor[1]) > 10) continue;
+      const nm = sky.nameOf.get(i), e = [x, y, z];
+      addHit(px, py, 8, 0, () => tipHTML(nm || 'Star', 'star', [['RA / Dec (J2000)', fmtRADec(e)], ['Ecl. lon / lat', eclLonLat(e).map(q => q.toFixed(2) + '°').join(' / ')],
+        ['Magnitude', sky.mag[i].toFixed(2)], ['Proper motion', Math.hypot(...sky.pm[i]).toFixed(0) + ' mas/yr'], ['Hipparcos', 'HIP ' + sky.hip[i]]], 'ESA Hipparcos position, moved to the date shown.'));
+    }
+  }
+}
+
+// ======================================== real asteroids, Trojans, Kuiper belt (NASA/JPL SBDB) ===
+// static/small_bodies.json holds the real orbits of the brightest objects of each class. Each object is advanced from its
+// own osculating elements (two-body motion), so the dots are real objects in their real places, and they move with time.
+let small = null;
+const SMALL_COL = {neo: '#d77a6a', belt: '#c2a173', trojan: '#e2a45f', tno: '#7a9ccc', lookup: '#e8e3d0', candidate: '#ff5ea8'};
+// one class of objects from rows [a, e, i, node, peri, M, epoch, H, diameter, name, flags]
+function makeClass(key, label, rows, extra = {}) {
+  const n = rows.length;
+  const o = Object.assign({key, label, n, col: SMALL_COL[key] || '#aaa', name: [], flags: [], H: new Float32Array(n), D: new Float32Array(n),
+             a: new Float64Array(n), e: new Float64Array(n), nm: new Float64Array(n), m0: new Float64Array(n), ep: new Float64Array(n),
+             P: new Float64Array(3*n), Q: new Float64Array(3*n), x: new Float32Array(n), y: new Float32Array(n), z: new Float32Array(n), jd: -1e12, stride: 0}, extra);
+  rows.forEach(([a, e, i, om, w, ma, epoch, H, D, name, flags], k) => {
+    const I = i*D2R, O = om*D2R, W = w*D2R, cO = Math.cos(O), sO = Math.sin(O), cW = Math.cos(W), sW = Math.sin(W), cI = Math.cos(I), sI = Math.sin(I);
+    o.a[k] = a; o.e[k] = e; o.m0[k] = ma*D2R; o.ep[k] = epoch; o.nm[k] = 0.01720209895/Math.pow(a, 1.5);          // Gauss's constant: rad/day
+    o.P[3*k] = cW*cO - sW*sO*cI; o.P[3*k+1] = cW*sO + sW*cO*cI; o.P[3*k+2] = sW*sI;                                 // perifocal axes in the ecliptic frame
+    o.Q[3*k] = -sW*cO - cW*sO*cI; o.Q[3*k+1] = -sW*sO + cW*cO*cI; o.Q[3*k+2] = cW*sI;
+    o.H[k] = H == null ? NaN : H; o.D[k] = D == null ? NaN : D; o.name[k] = name || ('object ' + (k + 1)); o.flags[k] = flags || 'p';
+  });
+  return o;
+}
+async function loadSmallBodies() {
+  try {
+    const d = await api('/static/small_bodies.json'), out = {source: d.source, retrieved: d.retrieved, cls: []};
+    for (const key in d.classes) { const c = d.classes[key]; out.cls.push(makeClass(key, c.label, c.rows, {total: c.total_known, cutoff: c.cutoff})); }
+    small = out; buildCatalog();
+  } catch (e) { console.warn('small bodies', e); }
+}
+function keplerXYZ(o, k, jd, out) {                                     // two-body position of object k of class o (AU, ecliptic J2000)
+  const e = o.e[k], a = o.a[k], TWO_PI = 2*Math.PI;
+  let M = (o.m0[k] + o.nm[k]*(jd - o.ep[k])) % TWO_PI; if (M > Math.PI) M -= TWO_PI; if (M < -Math.PI) M += TWO_PI;
+  let E = e < 0.8 ? M + e*Math.sin(M) : Math.PI;
+  for (let it = 0; it < 30; it++) { const d = (E - e*Math.sin(E) - M)/(1 - e*Math.cos(E)); E -= d; if (Math.abs(d) < 1e-10) break; }
+  const xp = a*(Math.cos(E) - e), yp = a*Math.sqrt(1 - e*e)*Math.sin(E), j = 3*k;
+  out[0] = xp*o.P[j] + yp*o.Q[j]; out[1] = xp*o.P[j+1] + yp*o.Q[j+1]; out[2] = xp*o.P[j+2] + yp*o.Q[j+2]; return out;
+}
+// Advance only the objects that will be drawn (every `stride`-th), and only when time has moved enough to show.
+function updateClass(o, jd, stride) {
+  const thr = o.key === 'tno' ? 10 : o.key === 'neo' ? 0.05 : 0.25;                                   // days; Kuiper-belt objects crawl
+  if (o.stride === stride && Math.abs(jd - o.jd) < thr) return;
+  o.jd = jd; o.stride = stride;
+  const v = [0, 0, 0];
+  for (let k = 0; k < o.n; k += stride) { keplerXYZ(o, k, jd, v); o.x[k] = v[0]; o.y[k] = v[1]; o.z[k] = v[2]; }
+}
+function drawRegions(c, s) {
+  if (!opt.cBelts || !small || W/s < 0.5) return;
+  const R0 = R[0], R1 = R[1], hw = W/2, hh = H/2, sz = 1.2 + Math.min(1.1, 0.5*Math.log2(Math.max(1, s/sFit()))), s2 = s*s;
+  const areaAU2 = {neo: 6, belt: Math.PI*(3.3*3.3 - 2.1*2.1), trojan: 4, tno: Math.PI*(50*50 - 30*30)};
+  for (const o of small.cls) {
+    if (!(o.key in areaAU2)) continue;
+    const stride = Math.max(1, Math.floor(o.n/clamp(areaAU2[o.key]*s2/5, 150, o.n)));      // never draw more dots than the screen area can show
+    updateClass(o, sim.jd, stride);
+    ctx.fillStyle = o.col; ctx.globalAlpha = o.key === 'belt' ? 0.6 : 0.7; ctx.beginPath();
+    for (let i = 0; i < o.n; i += stride) {
+      const x = o.x[i] - c[0], y = o.y[i] - c[1], z = o.z[i] - c[2];
+      const px = hw + (R0[0]*x + R0[1]*y + R0[2]*z)*s, py = hh - (R1[0]*x + R1[1]*y + R1[2]*z)*s;
+      if (px > -4 && px < W+4 && py > -4 && py < H+4) ctx.rect(px, py, sz, sz);
+    }
+    ctx.fill(); ctx.globalAlpha = 1;
+  }
+  const [sx0, sy0] = project([0,0,0], c, s), J = state.byName.Jupiter.pos, lj = Math.atan2(J[1], J[0]);
+  const label = (o, r, th, col, text) => { const q = project([r*Math.cos(th), r*Math.sin(th), 0], c, s); if (q[0] < 0 || q[0] > W || q[1] < 0 || q[1] > H) return;
+    if (Math.hypot(q[0] - sx0, q[1] - sy0) > 45) { ctx.fillStyle = col; ctx.font = 'italic 12px system-ui'; ctx.fillText(text || o.label, q[0] + 6, q[1]); }
+    addHit(q[0], q[1], 16, -0.3, () => tipHTML(o.label, 'real objects', [['Shown', o.n.toLocaleString() + ' of ' + o.total.toLocaleString() + ' known'], ['Selection', 'brightest: ' + o.cutoff],
+      ['Positions', "advanced from JPL's orbital elements for " + fmtDate(sim.jd, false)]],
+      'Source: ' + small.source + ' (retrieved ' + small.retrieved + '). Each object moves on a two-body orbit from its own elements; accuracy drops for dates far from the element epoch. SPHEREx finds objects like these as sources that move between its repeated scans.')); };
+  const by = Object.fromEntries(small.cls.map(o => [o.key, o]));
+  if (by.belt) label(by.belt, 2.7, 0.5, '#d8b987', 'Main asteroid belt');
+  if (by.tno) label(by.tno, 44, 2.2, '#8fb0dd', 'Kuiper belt');
+  if (by.trojan) { label(by.trojan, 5.2, lj + Math.PI/3, '#e8b070', 'Jupiter Trojans (L4)'); label(by.trojan, 5.2, lj - Math.PI/3, '#e8b070', 'Jupiter Trojans (L5)'); }
+}
+
+// ========================================================================== object tracker ===
+// Every object the viewer knows (planets, the Moon, SPHEREx, the JPL small bodies in small_bodies.json) can be searched,
+// filtered and tracked; any other asteroid or comet can be looked up live in NASA/JPL's Small-Body Database.
+// Tracked objects are highlighted on the map with their orbit, and say whether SPHEREx can see them right now.
+const TYPE_LABEL = {planet: 'Planet', moon: 'Moon', spacecraft: 'Spacecraft', neo: 'Near-Earth object', belt: 'Main-belt asteroid',
+                    trojan: 'Jupiter Trojan', tno: 'Kuiper-belt object', lookup: 'From JPL lookup', candidate: 'SPHEREx candidate'};
+const TYPE_SHORT = {planet: 'Planet', moon: 'Moon', spacecraft: 'Spacecraft', neo: 'NEO', belt: 'Main belt', trojan: 'Trojan', tno: 'Kuiper belt', lookup: 'JPL lookup', candidate: 'Candidate'};
+const ALBEDO = 0.14, estD = (H, p = ALBEDO) => 1329/Math.sqrt(p)*Math.pow(10, -H/5);        // diameter (km) from brightness H and an assumed albedo
+const esc = t => String(t).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+let catalog = [], tracked = new Map(), focusId = null, lookupCls = null, candidateCls = null;
+function smallEntry(o, k) {
+  const D = o.D[k], H = o.H[k], f = o.flags[k];
+  return {id: o.key + ':' + k, name: o.name[k], type: o.key, o, k, H, D: !isNaN(D) ? D : !isNaN(H) ? estD(H) : null, sizeKnown: !isNaN(D),
+          numbered: f[0] === 'n', neo: f.includes('N'), pha: f.includes('P'), unknown: o.key === 'candidate', pos: () => keplerXYZ(o, k, sim.jd, [0, 0, 0])};
+}
+function buildCatalog() {
+  catalog = PLANETS.map(n => ({id: 'pl:' + n, name: n, type: 'planet', D: 2*RADIUS_KM[n], sizeKnown: true, numbered: true, pos: () => state && state.byName[n].pos}));
+  catalog.push({id: 'moon', name: 'Moon', type: 'moon', D: 2*RADIUS_KM.Moon, sizeKnown: true, numbered: true, pos: () => state && state.byName.Moon ? state.byName.Moon.pos : null});
+  for (const o of [...(small ? small.cls : []), lookupCls, candidateCls]) if (o) for (let k = 0; k < o.n; k++) catalog.push(smallEntry(o, k));
+  for (const e of catalog) e.key = e.name.toLowerCase();
+  refreshTrackList();
+}
+// TODO(backend): SPHEREx moving-object candidates. Call XARVIS_addCandidates([[a, e, i, node, peri, M, epoch, H, D, name, flags], ...])
+// with fitted orbits (same columns as small_bodies.json) and they appear under Known / unknown -> "Unknown: SPHEREx candidates".
+window.XARVIS_addCandidates = rows => { candidateCls = makeClass('candidate', 'SPHEREx candidates', rows); buildCatalog(); };
+function entryById(id) { return catalog.find(e => e.id === id) || tracked.get(id); }
+function geoDir(p) { return state ? norm(sub(p, state.E)) : null; }
+function sizeText(e) { if (e.D == null) return e.type === 'spacecraft' ? '2.6 m' : 'size unknown'; const d = e.D >= 100 ? Math.round(e.D).toLocaleString() : e.D >= 1 ? e.D.toFixed(1) : (e.D*1000).toFixed(0) + ' m'; return (e.D >= 1 ? d + ' km' : d) + (e.sizeKnown ? '' : ' (est.)'); }
+const LOC = {any: () => true, inner: r => r < 2, belt: r => r >= 2 && r < 4.5, giants: r => r >= 4.5 && r < 30, outer: r => r >= 30};
+const SIZE = {any: () => true, s1: d => d < 1, s10: d => d >= 1 && d < 10, s100: d => d >= 10 && d < 100, s500: d => d >= 100 && d < 500, big: d => d >= 500};
+function filtered() {
+  const q = $('tq').value.trim().toLowerCase(), show = $('fShow').value, only = $('fOnly').value, out = [];
+  for (const e of catalog) {
+    if (q && !e.key.includes(q)) continue;
+    if (show === 'candidate' ? !e.unknown : e.unknown) continue;                             // known vs unknown objects
+    if (show !== 'all' && show !== 'candidate' && !(show === 'planets' ? (e.type === 'planet' || e.type === 'moon') : e.type === show)) continue;
+    if (only === 'pha' && !e.pha) continue; if (only === 'big' && !(e.D >= 100)) continue; if (only === 'measured' && !(e.o && e.sizeKnown)) continue;
+    if ((only === 'vis' || only === 'near') && state) {
+      const p = e.pos(); if (!p || e.name === 'Earth') continue;
+      if (only === 'near' && Math.hypot(...sub(p, state.E)) > 0.3) continue;
+      if (only === 'vis' && !visibilityOf(geoDir(p)).visible_now) continue;
+    }
+    out.push(e);
+  }
+  const rank = {planet: 0, moon: 1, spacecraft: 2};
+  // with a search: exact name or number first, then whole-word matches, then the rest; otherwise planets first, then by size
+  const word = q ? new RegExp('(^|[^a-z0-9])' + q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])') : null;
+  const qs = e => !q ? 0 : (e.key === q || e.key.split(' (')[0].split(' ').includes(q) && e.key.split(' (')[0].endsWith(q)) ? 0 : word.test(e.key) ? 1 : 2;
+  out.sort((a, b) => qs(a) - qs(b) || (rank[a.type] ?? 3) - (rank[b.type] ?? 3) || (b.D ?? -1) - (a.D ?? -1));
+  return out;
+}
+let trackListT = 0;
+function refreshTrackList() {
+  if (!$('trackPanel') || $('trackPanel').hidden) return;
+  trackListT = performance.now();
+  const list = filtered(), q = $('tq').value.trim(), shown = list.slice(0, 80), st = $('fShow').value === 'candidate' ? 'unknown' : '';
+  setText('tCount', list.length ? `${list.length.toLocaleString()} match${list.length === 1 ? '' : 'es'}` + (list.length > shown.length ? ` · showing the ${shown.length} largest` : '') : '');
+  let html = shown.map(e => { const p = state && e.pos(), r = p ? Math.hypot(...p) : null;
+    return `<div class="ti${tracked.has(e.id) ? ' on' : ''}" data-id="${esc(e.id)}"><span class="tn">${esc(e.name)}</span><span class="tm">${TYPE_SHORT[e.type]} · ${sizeText(e)}${r != null && e.type !== 'spacecraft' ? ' · ' + r.toFixed(2) + ' AU' : ''}${e.pha ? ' · PHA' : ''}</span></div>`; }).join('');
+  if (!list.length) html = st === 'unknown' ? '<div class="tmsg">No SPHEREx candidates yet. Unknown objects will appear here once the SPHEREx analysis backend reports them.</div>'
+                                            : '<div class="tmsg">Nothing in the built-in list matches. Try the JPL search below.</div>';
+  $('tList').innerHTML = html;
+  $('tLookup').hidden = !q; $('tLookup').textContent = `Search NASA/JPL for “${q.slice(0, 24)}”`;
+}
+function renderChips() {
+  setText('trackN', tracked.size ? '· ' + tracked.size : '');
+  $('trackChips').innerHTML = [...tracked.values()].map(e => `<span class="chip${focusId === e.id ? ' focus' : ''}" data-id="${esc(e.id)}"><b>${esc(e.name)}</b><button class="ghost cf" title="Centre the view on it">${focusId === e.id ? 'Following' : 'Centre'}</button><button class="ghost cx" title="Stop tracking">✕</button></span>`).join('');
+}
+function toggleTrack(id) {
+  if (tracked.has(id)) { tracked.delete(id); if (focusId === id) focusId = null; }
+  else { const e = entryById(id); if (!e) return; if (tracked.size >= 10) tracked.delete(tracked.keys().next().value); tracked.set(id, e); }
+  renderChips(); refreshTrackList();
+}
+async function jplLookup(q) {
+  $('tMsg').textContent = 'Asking NASA/JPL…';
+  try {
+    const r = await fetch('/api/sbdb/lookup?q=' + encodeURIComponent(q)), d = await r.json();
+    if (d.matches) { $('tMsg').innerHTML = 'Several objects match. Pick one: ' + d.matches.map(m => `<a href="#" data-des="${esc(m.des)}">${esc(m.name)}</a>`).join(' · '); return; }
+    if (!d.object) { $('tMsg').textContent = d.error || 'Not found.'; return; }
+    const row = d.object.row, name = row[9], prev = lookupCls ? lookupCls.rawRows : [];
+    if (prev.some(x => x[9] === name)) { $('tMsg').textContent = name + ' is already in the list.'; }
+    else { const rows = [...prev, row]; lookupCls = makeClass('lookup', 'Looked up in NASA/JPL SBDB', rows, {rawRows: rows}); buildCatalog(); $('tMsg').textContent = `Added ${name} (${d.object.class || 'small body'}) from NASA/JPL.`; }
+    const e = catalog.find(x => x.name === name); if (e && !tracked.has(e.id)) toggleTrack(e.id);
+  } catch (err) { $('tMsg').textContent = 'Could not reach NASA/JPL from the server.'; }
+}
+function orbitPts(e) {
+  if (e.o) { const o = e.o, k = e.k, a = o.a[k], ec = o.e[k], b = a*Math.sqrt(1 - ec*ec), j = 3*k, pts = [];
+    for (let i = 0; i <= 240; i++) { const E = i/240*2*Math.PI, xp = a*(Math.cos(E) - ec), yp = b*Math.sin(E); pts.push([xp*o.P[j] + yp*o.Q[j], xp*o.P[j+1] + yp*o.Q[j+1], xp*o.P[j+2] + yp*o.Q[j+2]]); }
+    return pts; }
+  if (e.type === 'planet' && state.orbits) return state.orbits[e.name];
+  return null;
+}
+function drawTracked(c, s) {
+  if (!tracked.size || !state) return;
+  for (const e of tracked.values()) {
+    const p = e.pos(); if (!p) continue;
+    const pts = orbitPts(e);
+    if (pts) { ctx.strokeStyle = '#ffb81c'; ctx.globalAlpha = 0.75; ctx.lineWidth = 1.4; polyline(pts, c, s); ctx.globalAlpha = 1; }
+    const [x, y] = project(p, c, s); if (x < -40 || x > W + 40 || y < -40 || y > H + 40) continue;
+    const pulse = 10 + 2*Math.sin(performance.now()/300);
+    ctx.strokeStyle = '#ffb81c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, pulse, 0, 7); ctx.stroke();
+    ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(x + dx*(pulse + 3), y + dy*(pulse + 3)); ctx.lineTo(x + dx*(pulse + 9), y + dy*(pulse + 9)); } ctx.stroke();
+    ctx.fillStyle = '#ffb81c'; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill();
+    ctx.font = 'bold 12px system-ui'; const w = measure('bold 12px system-ui', e.name); ctx.fillStyle = '#02040acc'; ctx.fillRect(x + 16, y - 22, w + 8, 17);
+    ctx.fillStyle = '#ffd27a'; ctx.fillText(e.name, x + 20, y - 9);
+    addHit(x, y, 14, 0.7, () => trackTip(e));
+  }
+}
+function trackTip(e) {
+  const p = e.pos(); if (!p) return tipHTML(esc(e.name), 'tracked', [], 'Not shown at this time or speed.');
+  const rows = [['Type', TYPE_LABEL[e.type]], ['Size', sizeText(e)]];
+  if (e.H != null && !isNaN(e.H)) rows.push(['Absolute magnitude H', e.H.toFixed(2)]);
+  rows.push(['From the Sun', Math.hypot(...p).toFixed(3) + ' AU']);
+  if (e.name !== 'Earth' && e.type !== 'spacecraft') { const g = sub(p, state.E); rows.push(['From Earth', distStr(Math.hypot(...g))], ['RA / Dec from Earth', fmtRADec(norm(g))]);
+    const v = visibilityOf(norm(g)); rows.push(['SPHEREx can see it now', v.visible_now ? 'yes' : 'no · ' + v.reason]); }
+  if (e.o) rows.push(['Orbit', `a ${e.o.a[e.k].toFixed(3)} AU · e ${e.o.e[e.k].toFixed(3)}`], ['Designation', e.numbered ? 'numbered (well-determined orbit)' : 'provisional']);
+  const note = e.o ? (e.sizeKnown ? 'Measured diameter' : `Diameter estimated from H with albedo ${ALBEDO} (range ${sizeRange(e.H)})`) + '. Two-body orbit from NASA/JPL elements (epoch ' + fmtDate(e.o.ep[e.k], false).slice(0, 10) + '); accuracy drops far from that date.' : '';
+  return tipHTML(esc(e.name), 'tracked', rows, note);
+}
+const sizeRange = H => { const lo = estD(H, 0.25), hi = estD(H, 0.05), f = d => d >= 1 ? d.toFixed(d >= 100 ? 0 : 1) + ' km' : (d*1000).toFixed(0) + ' m'; return f(lo) + '–' + f(hi); };
+
+// ============================================================ what SPHEREx can see (field of regard) ===
+// Official constraints used: SPHEREx points at least 91° from the Sun (NASA/JPL Horizons), and it cannot see through
+// Earth (geometry: Earth's disc seen from SPHEREx's real position). One exposure covers 3.5° x 11.3° (IPAC Explanatory
+// Supplement, Table 2). The Moon, flight-direction and Earth-limb margins are also avoided, but their angles are not
+// published, so they are not drawn. Sky directions are the same from SPHEREx and from Earth (the stars are at infinity).
+const SUN_LIMIT_DEG = 91, FOV_DEG = [3.5, 11.3], COS_SUN = Math.cos(SUN_LIMIT_DEG*D2R);
+const FOV_SR = 4*Math.asin(Math.sin(FOV_DEG[0]/2*D2R)*Math.sin(FOV_DEG[1]/2*D2R)), SR2DEG2 = (180/Math.PI)**2;
+function visGeom() {                                   // directions from SPHEREx to the Sun and to Earth's centre, Earth's angular radius
+  const sp = state.spherex, d = sp.earth_dist_km;
+  return {sun: norm([-sp.pos[0], -sp.pos[1], -sp.pos[2]]), toE: norm([-sp.off[0], -sp.off[1], -sp.off[2]]), cosRho: Math.cos(Math.asin(Math.min(1, EARTH_R_KM/Math.max(d, EARTH_R_KM + 1))))};
+}
+function visibilityOf(dir, g = visGeom()) {
+  const sunOK = dot(dir, g.sun) <= COS_SUN, earth = dot(dir, g.toE) >= g.cosRho;
+  return {visible_now: sunOK && !earth, sun_limit_ok: sunOK, behind_earth: earth,
+          reason: !sunOK ? 'closer than 91° to the Sun' : earth ? 'behind Earth right now' : 'in view'};
+}
+// fraction of the whole sky in each zone: 40,000 evenly spread directions (Fibonacci sphere), refreshed twice a second
+const FIB = (() => { const n = 40000, a = new Float32Array(n*3), g = Math.PI*(3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) { const z = 1 - 2*(i + 0.5)/n, r = Math.sqrt(1 - z*z), t = g*i; a[i*3] = r*Math.cos(t); a[i*3+1] = r*Math.sin(t); a[i*3+2] = z; } return a; })();
+let skyFrac = null, skyFracT = 0;
+function skyFractions() {
+  const t = performance.now(); if (skyFrac && t - skyFracT < 500) return skyFrac; skyFracT = t;
+  const g = visGeom(), n = FIB.length/3; let now = 0, sun = 0;
+  for (let i = 0; i < n; i++) { const x = FIB[i*3], y = FIB[i*3+1], z = FIB[i*3+2];
+    if (x*g.sun[0] + y*g.sun[1] + z*g.sun[2] > COS_SUN) continue; sun++;
+    if (x*g.toE[0] + y*g.toE[1] + z*g.toE[2] < g.cosRho) now++; }
+  return skyFrac = {now: now/n, sun: sun/n, rhoDeg: Math.acos(g.cosRho)/D2R};
+}
+// The zones are painted on the star backdrop with a coarse per-cell test (exact for any view, including the backdrop's
+// singular point), then smoothed by the browser; the boundary circles are drawn crisply on top.
+const visCv = document.createElement('canvas'), visCtx = visCv.getContext('2d');
+function drawVisibility() {
+  if (!opt.cVisNow && !opt.cVisAll) return;
+  const g = visGeom(), SK = skyScale(), cell = 6, gw = Math.ceil(W/cell), gh = Math.ceil(H/cell);
+  if (visCv.width !== gw || visCv.height !== gh) { visCv.width = gw; visCv.height = gh; }
+  const img = visCtx.createImageData(gw, gh), d = img.data, R0 = R[0], R1 = R[1], R2 = R[2];
+  let cx = 0, cy = 0, cn = 0; const rho = Math.acos(g.cosRho);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const u = ((i + 0.5)*cell - W/2)/SK, v = -((j + 0.5)*cell - H/2)/SK, r2 = u*u + v*v, k = 2/(1 + r2), a = u*k, b = v*k, c = -(1 - r2)/(1 + r2);
+    const x = R0[0]*a + R1[0]*b + R2[0]*c, y = R0[1]*a + R1[1]*b + R2[1]*c, z = R0[2]*a + R1[2]*b + R2[2]*c;   // view -> ecliptic direction
+    // soft edges: how far (in angle) this cell is inside each limit, compared with the cell's own angular size
+    const wEdge = cell*k/SK;
+    const mSun = Math.acos(clamp(x*g.sun[0] + y*g.sun[1] + z*g.sun[2], -1, 1)) - SUN_LIMIT_DEG*D2R;   // > 0: farther than 91 deg from the Sun
+    const cSun = clamp(mSun/wEdge + 0.5, 0, 1); if (cSun <= 0) continue;
+    const mE = Math.acos(clamp(x*g.toE[0] + y*g.toE[1] + z*g.toE[2], -1, 1)) - rho, cNow = clamp(mE/wEdge + 0.5, 0, 1);   // > 0: not behind Earth
+    const aAll = opt.cVisAll ? 16 : 0, al = opt.cVisNow ? cSun*(34*cNow + aAll*(1 - cNow)) : cSun*aAll;   // 34 = visible now, 16 = Sun limit only
+    if (al < 0.5) continue;
+    const o = (j*gw + i)*4; d[o] = 0; d[o+1] = 181; d[o+2] = 226; d[o+3] = Math.round(al);
+    if (opt.cVisNow && cNow*cSun > 0.5) { cx += i; cy += j; cn++; }
+  }
+  visCtx.putImageData(img, 0, 0);
+  ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(visCv, 0, 0, gw*cell, gh*cell); ctx.restore();
+  ctx.lineWidth = 1.2;
+  if (opt.cVisAll) { ctx.strokeStyle = '#ff9d6bcc'; ctx.setLineDash([7, 6]); ctx.beginPath(); drawGreatPath(smallCircle(g.sun, SUN_LIMIT_DEG, 180), SK); ctx.stroke(); ctx.setLineDash([]); }
+  if (opt.cVisNow && cn > 20) { ctx.fillStyle = '#5fd6f0'; placeLabel('SPHEREx can see now', '12px system-ui', (cx/cn + 0.5)*cell, (cy/cn + 0.5)*cell, [[w => -w/2, 4], [w => -w/2, -20], [w => -w/2, 28]]); }
+}
+
+// ============================================================================ 3D drawing ===
+function draw3D() {
+  const s = scaleOf(zt), c = centerOf(s), fade = constellationFade(s);
+  baseRects = uiReserved().slice();
+  drawStarfield(0.75, fade);
+  drawVisibility();
+  drawSkyTarget();
+  drawClickMark();
+  const E = state.E, sp = state.spherex, wAU = W/s, orbitA = smooth(0.004, 0.03, wAU);
+  drawRegions(c, s);
+  if (opt.cOrbits && orbitA > 0.01) {
+    ctx.lineWidth = 1; ctx.globalAlpha = orbitA;
+    if (state.orbits) strokeOrbits(state.orbits, c, s, '55');
+    ctx.globalAlpha = 1;
+  }
+  const [sx, sy] = project([0,0,0], c, s), sunR = Math.max(5, 695700/AU_KM*s), vis = sx + sunR*3.2 > 0 && sx - sunR*3.2 < W && sy + sunR*3.2 > 0 && sy - sunR*3.2 < H;
+  if (vis) { if (sunR < 1500) drawGlow(sx, sy, Math.max(sunR*3.2, 18), '#ffb300'); ctx.fillStyle = '#ffd35a'; ctx.beginPath(); ctx.arc(sx, sy, sunR, 0, 7); ctx.fill(); }
+  addHit(sx, sy, sunR, 0.2, () => tipHTML('Sun', 'star', [['Position','origin of the frame'], ['From Earth', distStr(Math.hypot(...E))], ['RA / Dec (J2000)', fmtRADec(norm([-E[0], -E[1], -E[2]]))]]));
+
+  // SPHEREx orbit: far half before Earth, near half after, so Earth really occludes it
+  const ringPx = sp.earth_dist_km/AU_KM*s, moonPx = 2.6e-3*s, R2 = R[2], ring = sp.ring;
+  const ringHalf = front => { if (ringPx < 2.5) return; ctx.strokeStyle = front ? '#ff7a59' : '#a64a35'; ctx.lineWidth = 1.5; ctx.beginPath();
+    const R0 = R[0], R1 = R[1], pen = makePen(); let px = 0, py = 0, prev = false;
+    for (let i = 0; i < ring.length; i++) { const o = ring[i];
+      if (((R2[0]*o[0] + R2[1]*o[1] + R2[2]*o[2]) >= 0) !== front) { prev = false; pen.gap(); continue; }
+      const dx = E[0]+o[0]-c[0], dy = E[1]+o[1]-c[1], dz = E[2]+o[2]-c[2], x = W/2 + (R0[0]*dx + R0[1]*dy + R0[2]*dz)*s, y = H/2 - (R1[0]*dx + R1[1]*dy + R1[2]*dz)*s;
+      if (prev) pen.line(px, py, x, y); px = x; py = y; prev = true; }
+    ctx.stroke(); };
+  ringHalf(false);
+  if (state.moonOff && opt.cOrbits && moonPx > 4) { ctx.strokeStyle = '#8a8a8a88'; ctx.lineWidth = 1; polyline(state.moonOff, c, s, 1, E); }
+
+  let earthXY = null;
+  for (const p of state.bodies) {
+    const [x, y] = project(p.pos, c, s), r = Math.max(3, p.radius_km/AU_KM*s);
+    if (p.name === 'Earth') earthXY = [x, y, r];
+    if (x < -r-50 || x > W+r+50 || y < -r-50 || y > H+r+50) continue;
+    if (p.name === 'Earth' && r > 8) { const sv = toView(state.sun_dir), g = ctx.createRadialGradient(x + sv[0]*r*.5, y - sv[1]*r*.5, r*.05, x, y, r*1.02);
+      g.addColorStop(0,'#7cc0ff'); g.addColorStop(.55,'#2b6fc4'); g.addColorStop(1,'#0a1e3d'); ctx.fillStyle = g; } else ctx.fillStyle = COLORS[p.name];
+    ctx.beginPath();
+    ctx.arc(x, y, Math.min(r, 1e5), 0, 7);
+    ctx.fill();
+    const nearSun = Math.hypot(x - sx, y - sy) < 22;
+    if (p.name === 'Moon' && r < 25) { /* too close to Earth to label */ }
+    else if (r < 60) { if (!nearSun || p.name === 'Earth') { ctx.fillStyle = '#9fb0d8'; ctx.font = '12px system-ui'; ctx.fillText(p.name, x + r + 5, y - r - 3); } }
+    else { ctx.fillStyle = '#fff'; ctx.font = '13px system-ui'; ctx.fillText(p.name, x - 18, y + 4); }
+    addHit(x, y, r + 3, p.name === 'Moon' ? 0.4 : 0.1, () => { const rows = bodyRows(p.pos, p.name === 'Earth' ? null : E, 'Earth'); if (p.name !== 'Earth') rows.push(['Radius', p.radius_km.toLocaleString() + ' km']);
+      return tipHTML(p.name, p.name === 'Moon' ? 'moon' : 'planet', rows, 'Position: ' + (state.from === 'track' ? 'NASA/JPL DE440s ephemeris.' : "JPL's mean orbital elements (approximate).")); });
+  }
+  ringHalf(true);
+  drawTracked(c, s);
+  if (earthXY && earthXY[2] > 20) { const L = 7.2e-5, tip = project([E[0]+state.sun_dir[0]*L, E[1]+state.sun_dir[1]*L, E[2]+state.sun_dir[2]*L], c, s);
+    ctx.strokeStyle = '#ffd35a'; ctx.setLineDash([6,5]); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(earthXY[0], earthXY[1]); ctx.lineTo(tip[0], tip[1]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#ffd35a'; ctx.font = '12px system-ui'; ctx.fillText('to Sun', tip[0] + 6, tip[1]); }
+
+  if (sp.showMarker) {
+    const [px, py] = project(sp.pos, c, s), behind = earthXY && toView(sp.off)[2] < 0 && Math.hypot(px - earthXY[0], py - earthXY[1]) < earthXY[2];
+    ctx.globalAlpha = behind ? 0.35 : 1; const pulse = 9 + 3*Math.sin(performance.now()/350);
+    ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(px, py, pulse, 0, 7); ctx.stroke();
+    ctx.fillStyle = '#ff4d4d'; ctx.beginPath(); ctx.arc(px, py, 3.5, 0, 7); ctx.fill();
+    if (wAU < 150) { ctx.fillStyle = '#ffd0d0'; ctx.font = 'bold 13px system-ui'; ctx.fillText('SPHEREx', px + 16, py - 10); }
+    ctx.globalAlpha = 1;
+    addHit(px, py, 14, 0.5, () => tipHTML('SPHEREx', 'telescope', [['Heliocentric r', sp.helio_dist_au.toFixed(5) + ' AU'], ['Ecl. lon / lat', sp.ecl_lon_deg.toFixed(3) + '° / ' + sp.ecl_lat_deg.toFixed(3) + '°'],
+      ['X, Y, Z (AU)', sp.pos.map(v => v.toFixed(5)).join(', ')], ['Altitude', Math.round(sp.altitude_km).toLocaleString() + ' km'], ['Orbit period', sp.period_min.toFixed(1) + ' min'],
+      ['RA / Dec from Earth centre', fmtRADec(norm(sp.off))]], sp.live ? 'Live position (TLE + SGP4).' : 'Approximate: position along the orbit is not known without a live TLE.'));
+  }
+}
+
+// ============================================================================ cursor readout ===
+// "Where am I looking?"  The sky direction under the cursor, in three coordinate systems, plus (in 3D) the point on
+// the ecliptic plane the cursor is over.
+function skyDirAt(x, y) {                                                    // inverse of the stereographic backdrop projection
+  const SK = skyScale(), u = (x - W/2)/SK, v = -(y - H/2)/SK, r2 = u*u + v*v, k = 2/(1 + r2);
+  return fromView([u*k, v*k, -(1 - r2)/(1 + r2)]);
+}
+function planePointAt(x, y) {                                                // cursor ray (3D view) meets the ecliptic plane z = 0
+  const s = scaleOf(zt), c = centerOf(s), vx = (x - W/2)/s, vy = -(y - H/2)/s, r22 = R[2][2];
+  if (Math.abs(r22) < 0.05) return null;
+  const vz = -(c[2] + R[0][2]*vx + R[1][2]*vy)/r22;
+  return [c[0] + R[0][0]*vx + R[1][0]*vy + R[2][0]*vz, c[1] + R[0][1]*vx + R[1][1]*vy + R[2][1]*vz];
+}
+function updateCoords() {                                                  // always the same three rows, so the box never changes size
+  const plane = cursor && planePointAt(cursor[0], cursor[1]);
+  let sk = '—';
+  if (cursor) { const [ra, dec] = ecl2eq(skyDirAt(cursor[0], cursor[1])); sk = fmtRA(ra, false) + ' · ' + fmtDec(dec, false); }
+  const rows = [['Sky', sk], ['Plane x, y (AU)', plane ? plane[0].toFixed(2) + ', ' + plane[1].toFixed(2) + ' · r ' + Math.hypot(plane[0], plane[1]).toFixed(2) : '—']];
+  let hint = 'double-click to analyse';
+  if (cursor && state) { const v = visibilityOf(skyDirAt(cursor[0], cursor[1])); hint = v.visible_now ? '<span class="ok">● SPHEREx can see this</span>' : `<span class="no">● SPHEREx can't see this</span>`; }
+  setHTML('cHint', hint);
+  setHTML('coordsBody', rows.map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join(''));
+}
+
+// ======================================================================= go to sky coordinates ===
+// Type RA/Dec (or pick a test target) to look at a patch of sky: the view turns to it, a marker shows the patch, and the
+// analysis popup opens for it. Test targets come from ESA Gaia DR3 (static/targets.json), and are moved with their
+// proper motion to the date shown; WISE 0855-0714 is too faint for Gaia and uses the challenge's coordinates.
+let targets = [], skyTarget = null, viewAnim = null;
+const SPHEREX_PIX = 6.15;
+const patchPix = () => clamp(Math.round(+$('gPix').value || 50), 10, 2000), patchHW = () => patchPix()*SPHEREX_PIX/3600/2;   // half-width in degrees
+function showPatchInfo() { const px = patchPix(), am = px*SPHEREX_PIX/60; setText('gPixInfo', `${px} × ${px} px at 6.15″ per pixel = ${am < 60 ? am.toFixed(1) + '′' : (am/60).toFixed(2) + '°'} square. Larger patches show faster-moving objects but take longer to load.`); }                                         // arcsec per pixel (IPAC Explanatory Supplement, Table 2)
+function parseRA(t) {
+  t = t.trim().toLowerCase().replace(/[−–]/g, '-'); if (!t) return null;
+  const n = t.match(/[\d.]+/g); if (!n) return null;
+  if (/[h:]/.test(t) || /\s/.test(t) || n.length > 1) { const [h, m = 0, s = 0] = n.map(Number); const v = (h + m/60 + s/3600)*15; return h < 24 && m < 60 && s < 60 ? v : null; }
+  const v = Number(n[0]); return v >= 0 && v < 360 ? v : null;            // a single number: degrees
+}
+function parseDec(t) {
+  t = t.trim().replace(/[−–]/g, '-'); if (!t) return null;
+  const neg = /^-/.test(t), n = t.match(/[\d.]+/g); if (!n) return null;
+  const [d, m = 0, s = 0] = n.map(Number), v = (neg ? -1 : 1)*(d + m/60 + s/3600);
+  return Math.abs(v) <= 90 && m < 60 && s < 60 ? v : null;
+}
+function targetEqAt(T, jd) {                                      // [ra, dec] in degrees at date jd (linear proper motion, like the star field)
+  if (T.pmra == null || T.epoch == null) return [T.ra, T.dec];
+  const a = T.ra*D2R, d = T.dec*D2R, u = [Math.cos(d)*Math.cos(a), Math.cos(d)*Math.sin(a), Math.sin(d)], e = [-Math.sin(a), Math.cos(a), 0], nn = [-Math.sin(d)*Math.cos(a), -Math.sin(d)*Math.sin(a), Math.cos(d)];
+  const yrs = (jd - 2451545.0)/365.25 + 2000 - T.epoch, k = D2R/3.6e6*yrs, v = norm([0, 1, 2].map(i => u[i] + k*(T.pmra*e[i] + T.pmdec*nn[i])));
+  return [(Math.atan2(v[1], v[0])/D2R + 360) % 360, Math.asin(v[2])/D2R];
+}
+const targetDir = (T, jd = sim.jd) => { const [ra, dec] = targetEqAt(T, jd); return eq2ecl(ra*D2R, dec*D2R); };
+async function loadTargets() {
+  try { targets = (await api('/static/targets.json')).targets;
+    $('gTarget').innerHTML = '<option value="">Choose a target…</option>' + targets.map((t, i) => `<option value="${i}">${esc(t.name)}</option>`).join(''); }
+  catch (e) { console.warn('targets', e); }
+}
+// Shareable links: /?ra=133.795&dec=-7.245&px=50&date=2026-01-10  or  /?target=Barnard  (opens that patch on load)
+function applyUrl() {
+  const q = new URLSearchParams(location.search); if (!q.has('ra') && !q.has('target')) return;
+  if (q.get('px')) $('gPix').value = clamp(+q.get('px') || 50, 10, 2000);
+  const go = () => {
+    if (!state || !sky) return setTimeout(go, 300);
+    if (q.get('date')) { const jd = parseDate(q.get('date')); if (jd !== null) { setJD(jd); sim.dir = 0; } }
+    const named = q.get('target') && targets.find(t => t.name.toLowerCase().includes(q.get('target').toLowerCase()));
+    const ra = parseRA(q.get('ra') || ''), dec = parseDec(q.get('dec') || '');
+    const T = named || (ra != null && dec != null ? {name: `RA ${fmtRA(ra, false)} · Dec ${fmtDec(dec, false)}`, ra, dec, typed: true, source: 'typed coordinates (J2000)'} : null);
+    if (T) { $('intro').hidden = true; showSkyTarget(T, patchHW()); }
+  };
+  go();
+}
+function lookToward(f) {                                          // turn the view smoothly so direction f is in the middle of the screen
+  spin = false; $('spin').classList.remove('on'); $('spinPanel').hidden = true;
+  const f0 = norm([-R[2][0], -R[2][1], -R[2][2]]), ang = Math.acos(clamp(dot(f0, f), -1, 1)), t0 = performance.now();
+  viewAnim = t => { const k = Math.min(1, (t - t0)/1300), e = k < .5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2)/2;
+    let v = f; if (ang > 1e-6 && ang < Math.PI - 1e-3) { const sn = Math.sin(ang); v = [0, 1, 2].map(i => (Math.sin((1 - e)*ang)*f0[i] + Math.sin(e*ang)*f[i])/sn); }
+    R = lookAt(norm(v), [0, 0, 1]); return k >= 1; };
+}
+function showSkyTarget(T, hw) {
+  skyTarget = {T, hw}; lookToward(targetDir(T));
+  $('gotoChip').innerHTML = `<span class="chip"><b>${esc(T.name)}</b><button class="ghost cf" id="gReopen" title="Open the analysis again">Open</button><button class="ghost cx" id="gClear" title="Remove the marker">✕</button></span>`;
+  $('gReopen').onclick = () => openAnalysisDir(targetDir(T), T, hw); $('gClear').onclick = () => { skyTarget = null; $('gotoChip').innerHTML = ''; };
+  setTimeout(() => openAnalysisDir(targetDir(T), T, hw), 1350);
+}
+function goToTyped() {
+  const i = $('gTarget').value, hw = patchHW(), ra = parseRA($('gRA').value), dec = parseDec($('gDec').value);
+  if (ra == null || dec == null) { $('gMsg').className = 'err'; $('gMsg').textContent = ra == null ? 'Right ascension not understood: try 08h55m10.8s, 08 55 10.8 or 133.795 (degrees).' : 'Declination not understood: try -7d14m42.5s, -07 14 42.5 or -7.245.'; return; }
+  $('gMsg').className = 'dim';
+  const T0 = i !== '' ? targets[+i] : null;
+  const same = T0 && Math.abs(ra - T0.ra) < 1e-4 && Math.abs(dec - T0.dec) < 1e-4;      // untouched preset: keep its Gaia motion
+  showSkyTarget(same ? T0 : {name: `RA ${fmtRA(ra, false)} · Dec ${fmtDec(dec, false)}`, ra, dec, typed: true, source: 'typed coordinates (J2000)'}, hw);
+}
+function drawSkyTarget() {
+  if (!skyTarget) return;
+  const SK = skyScale(), T = skyTarget.T, d = targetDir(T), q = skyXY(toView(d), SK); if (!q) return;
+  const half = Math.max(9, skyTarget.hw*D2R*SK), pulse = 3*Math.sin(performance.now()/300);
+  ctx.strokeStyle = '#5fd6f0'; ctx.lineWidth = 1.6; ctx.strokeRect(q[0] - half, q[1] - half, 2*half, 2*half);
+  ctx.beginPath(); for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(q[0] + dx*(half + 4 + pulse), q[1] + dy*(half + 4 + pulse)); ctx.lineTo(q[0] + dx*(half + 14 + pulse), q[1] + dy*(half + 14 + pulse)); } ctx.stroke();
+  ctx.font = 'bold 12px system-ui'; const w = measure('bold 12px system-ui', T.name); ctx.fillStyle = '#02040acc'; ctx.fillRect(q[0] + half + 16, q[1] - half - 20, w + 8, 17);
+  ctx.fillStyle = '#9fe6f7'; ctx.fillText(T.name, q[0] + half + 20, q[1] - half - 7);
+  addHit(q[0], q[1], half + 6, 0.6, () => tipHTML(esc(T.name), 'sky patch', [['RA / Dec (J2000)', fmtRADec(d)], ['Patch', (2*skyTarget.hw*60).toFixed(0) + '′ × ' + (2*skyTarget.hw*60).toFixed(0) + '′']], 'Double-click or use "Open" to analyse it.'));
+}
+
+// ========================================================================= analysis popup ===
+// Double-click: take the sky direction under the cursor (as seen from Earth: the stars are effectively at infinity, so
+// the geocentric direction equals the direction drawn), package it and show it. PLACEHOLDER - nothing is sent yet.
+function analysisPayload(dir, T = null, hw = 0.25) {
+  const eq = ecl2eqVec(dir), [ra, dec] = ecl2eq(dir), [lam, beta] = eclLonLat(dir), [l, b] = ecl2gal(dir);
+  const sp = state.spherex, elong = Math.acos(clamp(dot(dir, state.sun_dir), -1, 1))/D2R;
+  const r6 = v => +v.toFixed(6);
+  return {
+    request: 'sky_point_analysis', version: 1,
+    time: {utc: fmtDate(sim.jd) + ' UTC', jd_utc: +sim.jd.toFixed(6), simulated: !sim.live},
+    target: {frame: 'geocentric, J2000 equatorial (ICRS-aligned)', ra_deg: r6(ra), dec_deg: r6(dec), unit_vector: eq.map(r6),
+             spherex_visibility: visibilityOf(dir), ecliptic_lon_deg: r6(lam), ecliptic_lat_deg: r6(beta), galactic_l_deg: r6(l), galactic_b_deg: r6(b), sun_elongation_deg: +elong.toFixed(3)},
+    patch: {half_width_deg: hw, size: (2*hw*60).toFixed(0) + ' x ' + (2*hw*60).toFixed(0) + ' arcmin'},
+    named_target: T ? {name: T.name, source: T.source || null, gaia_dr3: T.gaia_dr3 || null, ra_deg_at_epoch: T.ra, dec_deg_at_epoch: T.dec, epoch: T.epoch ?? null,
+                       pmra_mas_yr: T.pmra ?? null, pmdec_mas_yr: T.pmdec ?? null, parallax_mas: T.parallax ?? null, gaia_g_mag: T.g ?? null} : null,
+    spherex: {geocentric_km_j2000_equatorial: ecl2eqVec(sp.off).map(v => +(v*AU_KM).toFixed(1)), altitude_km: +sp.altitude_km.toFixed(1), orbit_source: sp.source},
+  };
+}
+// ---- SPHEREx images: the analysis popup asks the backend (/api/analysis -> xarvis_pipeline) for every SPHEREx image of
+// the patch, then plays them. The pipeline downloads cutouts from NASA/IPAC IRSA, measures the target in each, and
+// renders frames (north up, east left, one PNG pixel = one 6.15" SPHEREx pixel), stacks per detector and differences.
+let spxPayload = null, spxJob = null, spxPoll = null, spxSummary = null, spxTimer = null;
+function requestAnalysis(payload) {
+  spxPayload = payload; spxJob = null; spxSummary = null; clearTimeout(spxPoll); clearInterval(spxTimer);
+  $('spxStart').hidden = false; $('spxProg').hidden = true; $('spxPlayer').hidden = true; $('spxStatus').textContent = '';
+  $('spxPlay').textContent = '▶';
+}
+function spxBody() {                                    // what the backend needs, from the popup's payload
+  const P = spxPayload, T = P.named_target, body = {patch_px: patchPix(), max_images: +$('spxN').value};
+  if (T && !/typed/.test(T.source || '')) body.mode = 'gaia_star', body.target = {name: T.name, ra: T.ra_deg_at_epoch, dec: T.dec_deg_at_epoch, pmra: T.pmra_mas_yr, pmdec: T.pmdec_mas_yr, parallax: T.parallax_mas, gaia_dr3: T.gaia_dr3};
+  else body.mode = 'coordinates', body.ra = P.target.ra_deg, body.dec = P.target.dec_deg;
+  return body;
+}
+async function spxStart() {
+  $('spxStart').hidden = true; $('spxProg').hidden = false; $('spxBar').style.width = '2%'; $('spxStatus').textContent = 'Asking NASA/IPAC IRSA…';
+  try {
+    const r = await fetch('/api/analysis', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(spxBody())});
+    const d = await r.json(); if (!r.ok) throw new Error(d.error || r.status);
+    spxJob = d.job; spxPollOnce();
+  } catch (e) { $('spxStatus').textContent = 'Could not start: ' + e.message; $('spxStart').hidden = false; $('spxProg').hidden = true; }
+}
+async function spxPollOnce() {
+  const id = spxJob; if (!id) return;
+  try {
+    const d = await (await fetch('/api/analysis/' + id)).json();
+    if (id !== spxJob) return;
+    if (d.status === 'done') { $('spxProg').hidden = true; spxShow(d.summary); return; }
+    if (d.status === 'error') { $('spxStatus').textContent = 'Failed: ' + (d.error || 'unknown error'); $('spxProg').hidden = true; $('spxStart').hidden = false; return; }
+    $('spxStatus').textContent = d.message || 'Working…';
+    $('spxBar').style.width = (d.total ? Math.max(4, 100*d.done/d.total) : 4) + '%';
+  } catch (e) { $('spxStatus').textContent = 'Waiting for the server…'; }
+  spxPoll = setTimeout(spxPollOnce, 1000);
+}
+function spxShow(S) {
+  spxSummary = S;
+  if (!S.frames.length) { $('spxStatus').textContent = 'No SPHEREx image covers this patch yet.'; $('spxStart').hidden = false; return; }
+  $('spxPlayer').hidden = false; $('spxSlider').max = S.frames.length; $('spxSlider').value = 1;
+  const mjd = S.frames.map(f => f.mjd);
+  $('spxStatus').textContent = `${S.frames.length} images · ${fmtDate(Math.min(...mjd) + 2400000.5, false).slice(0, 10)} → ${fmtDate(Math.max(...mjd) + 2400000.5, false).slice(0, 10)} UTC`;
+  $('spxSrc').textContent = S.source + '. Measured with the XARVIS pipeline.';
+  spxMode(); spxSpectrum(S.spectrum);
+}
+function spxMode() {
+  const S = spxSummary; if (!S) return; const mode = $('spxMode').value, kind = mode === 'stack' ? 'stack' : 'difference';
+  const frames = mode === 'frames'; $('spxSlider').hidden = !frames; $('spxPlay').hidden = !frames; $('spxDet').hidden = frames;
+  if (!frames) { const list = S.images.filter(i => i.kind === kind);
+    $('spxDet').innerHTML = list.map((im, k) => `<option value="${k}">Detector ${im.detector}${im.wavelength_um ? ` · ${im.wavelength_um[0].toFixed(2)}–${im.wavelength_um[1].toFixed(2)} µm` : ''}</option>`).join('');
+    if (!list.length) { $('spxInfo').innerHTML = kind === 'difference' ? '<span class="warn">Only one survey visit in these images, so there is nothing to subtract yet. Load more images.</span>' : 'No stack available.'; $('spxImg').removeAttribute('src'); $('spxImg').parentNode.hidden = true; return; } }
+  $('spxImg').parentNode.hidden = false;
+  spxDraw();
+}
+function spxDraw() {
+  const S = spxSummary, mode = $('spxMode').value, base = '/api/analysis/' + spxJob + '/';
+  let png, info;
+  if (mode === 'frames') {
+    const f = S.frames[+$('spxSlider').value - 1]; png = f.png;
+    const flags = (f.flags_in_aperture || []).filter(n => n !== 'SOURCE');
+    info = `T${f.T} · ${fmtDate(f.mjd + 2400000.5)} UTC · detector ${f.detector} · ${f.wavelength_um != null ? f.wavelength_um.toFixed(3) + ' µm' : '—'}` +
+      ` · S/N ${f.snr != null ? f.snr.toFixed(1) : '—'} · track ${f.track || '—'}${f.saturated ? ' · <span class="warn">saturated</span>' : ''}` +
+      (flags.length ? ` · <span class="warn">flags: ${flags.join(', ')}</span>` : '') + (f.n_bad_in_aperture ? ` · <span class="warn">${f.n_bad_in_aperture} bad px in the circle</span>` : '');
+  } else {
+    const list = S.images.filter(i => i.kind === (mode === 'stack' ? 'stack' : 'difference')), im = list[+$('spxDet').value || 0]; if (!im) return;
+    png = im.png; info = mode === 'stack' ? `Detector ${im.detector}: ${im.frames} images added together (inverse-variance weighted) for a cleaner view`
+      : `Detector ${im.detector}: visit of ${fmtDate(im.to_mjd + 2400000.5, false).slice(0, 10)} minus visit of ${fmtDate(im.from_mjd + 2400000.5, false).slice(0, 10)}. White = brighter now, black = brighter before: movers show as a black–white pair`;
+  }
+  $('spxImg').src = base + png; $('spxInfo').innerHTML = info;
+  const n = S.patch_px, r = 2/n*100, c = 50;                            // measurement circle: 2 px radius, at the centre
+  Object.assign($('spxRing').style, {left: (c - r) + '%', top: (c - r) + '%', width: 2*r + '%', height: 2*r + '%'});
+}
+function spxSpectrum(sp) {                              // flux against wavelength from every measured frame (102 channels)
+  const cv = $('spxSpec'), g = cv.getContext('2d'), W = cv.width, H = cv.height; g.clearRect(0, 0, W, H);
+  g.fillStyle = '#8a97b3'; g.font = '11px system-ui';
+  const say = (a, b) => { g.fillText(a, 10, H/2 - 6); if (b) g.fillText(b, 10, H/2 + 10); };
+  if (!sp || sp.error || !sp.wavelength_um) { say('No spectrum yet: the target is not measured in enough frames', '(too faint, or saturated like Barnard\u2019s Star).'); return; }
+  const pts = sp.wavelength_um.map((w, i) => [w, sp.flux_mjy[i], sp.flux_err_mjy[i]]).filter(p => p[1] != null);
+  if (pts.length < 2) { say(`Spectrum: ${pts.length} of 102 channels measured (target too faint or saturated here).`, 'More images fill in more channels.'); return; }
+  const x0 = 34, x1 = W - 8, y0 = H - 18, y1 = 8, lo = Math.min(...pts.map(p => p[1] - (p[2] || 0))), hi = Math.max(...pts.map(p => p[1] + (p[2] || 0)));
+  const X = w => x0 + (w - 0.7)/(5.05 - 0.7)*(x1 - x0), Y = f => y0 - (f - lo)/((hi - lo) || 1)*(y0 - y1);
+  g.strokeStyle = '#1f2a44'; g.beginPath(); g.moveTo(x0, y1); g.lineTo(x0, y0); g.lineTo(x1, y0); g.stroke();
+  for (const w of [1, 2, 3, 4, 5]) g.fillText(w + ' µm', X(w) - 10, H - 4);
+  g.save(); g.translate(10, H/2 + 16); g.rotate(-Math.PI/2); g.fillText('flux (mJy)', 0, 0); g.restore();
+  g.fillStyle = '#8a97b3'; g.fillText(`${pts.length} of 102 channels measured` + (pts.length < 30 ? ' (the rest: saturated, too faint or flagged pixels)' : ''), x0 + 8, y1 + 10);
+  g.strokeStyle = '#5fd6f088'; g.fillStyle = '#5fd6f0';
+  for (const [w, f, e] of pts) { g.beginPath(); g.moveTo(X(w), Y(f - (e || 0))); g.lineTo(X(w), Y(f + (e || 0))); g.stroke(); g.beginPath(); g.arc(X(w), Y(f), 2.2, 0, 7); g.fill(); }
+}
+
+let anaPayloadNow = null;
+// When will SPHEREx be able to see direction d? Behind Earth: step SPHEREx around its orbit minute by minute.
+// Too close to the Sun: step the Sun along Earth's orbit day by day (JPL mean elements) until it is 91 deg away.
+function spxOffAt(jd) { const a = snap.a_km/AU_KM, phi = 2*Math.PI*(jd - snap.jd)*1440/snap.period_min; return [0, 1, 2].map(k => a*(Math.cos(phi)*snap.u[k] + Math.sin(phi)*snap.w[k])); }
+function nextVisible(d) {
+  const sunOK = jd => { const E = kepler('Earth', (jd - J2000)/36525); return dot(d, norm([-E[0], -E[1], -E[2]])) <= COS_SUN; };
+  if (sunOK(sim.jd)) {
+    for (let m = 1; m <= 200; m++) { const jd = sim.jd + m/1440, o = spxOffAt(jd), r = Math.hypot(...o), toE = [-o[0]/r, -o[1]/r, -o[2]/r];
+      if (dot(d, toE) < Math.cos(Math.asin(Math.min(1, EARTH_R_KM/(r*AU_KM))))) return `It comes back into view in about ${m} minute${m === 1 ? '' : 's'}, as SPHEREx moves around Earth (one orbit takes ${snap.period_min.toFixed(0)} minutes).`; }
+    return 'Earth blocks it for the whole of this orbit.';
+  }
+  for (let dd = 1; dd <= 366; dd++) if (sunOK(sim.jd + dd)) return `As Earth moves around the Sun, it comes into SPHEREx's view around ${fmtDate(sim.jd + dd, false).slice(0, 10)} (in ${dd} day${dd === 1 ? '' : 's'}).`;
+  return 'It stays too close to the Sun for the next year.';
+}
+let clickMark = null;
+function drawClickMark() {                                     // brief feedback where you double-clicked: green ring = SPHEREx can see it, red = it can't
+  if (!clickMark) return; const age = (performance.now() - clickMark.t)/1000; if (age > 3) { clickMark = null; return; }
+  const q = skyXY(toView(clickMark.dir), skyScale()); if (!q) return;
+  ctx.globalAlpha = Math.min(1, 3 - age); ctx.lineWidth = 2; ctx.strokeStyle = clickMark.ok ? '#5fe0a0' : '#ff6b5a';
+  ctx.beginPath(); ctx.arc(q[0], q[1], 12 + age*4, 0, 7); ctx.stroke();
+  if (!clickMark.ok) { ctx.beginPath(); ctx.moveTo(q[0] - 7, q[1] - 7); ctx.lineTo(q[0] + 7, q[1] + 7); ctx.moveTo(q[0] + 7, q[1] - 7); ctx.lineTo(q[0] - 7, q[1] + 7); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+}
+function openAnalysis(x, y) { if (state && sky) openAnalysisDir(skyDirAt(x, y), null, patchHW()); }
+let anaReq = 0;
+function openAnalysisDir(dir, T, hw) {
+  if (!state || !sky) return;
+  const P = anaPayloadNow = analysisPayload(dir, T, hw), t = P.target;
+  setText('anaTitle', T ? T.name : `RA ${fmtRA(t.ra_deg, false)} · Dec ${fmtDec(t.dec_deg, false)}`);
+  const sg = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(3) + '°';
+  const rows = [['Time (UTC)', P.time.utc + (P.time.simulated ? ' · simulated' : '')], ['Right ascension / declination', fmtRA(t.ra_deg) + ' / ' + fmtDec(t.dec_deg)],
+                ['', t.ra_deg.toFixed(5) + '° / ' + sg(t.dec_deg)],
+                ['Ecliptic longitude / latitude', t.ecliptic_lon_deg.toFixed(3) + '° / ' + sg(t.ecliptic_lat_deg)], ['Galactic longitude / latitude', t.galactic_l_deg.toFixed(3) + '° / ' + sg(t.galactic_b_deg)],
+                ['Angle from the Sun', t.sun_elongation_deg.toFixed(1) + '°'], ['Can SPHEREx see it now?', t.spherex_visibility.visible_now ? 'yes' : 'no · ' + t.spherex_visibility.reason], ['Patch', P.patch.size.replace(' x ', '′ × ').replace(' arcmin', '′')]];
+  $('anaRows').innerHTML = rows.map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+  // the named target: who measured it and how far it moves during the SPHEREx survey
+  let trk = null;
+  if (T && T.pmra != null) {
+    const pm = Math.hypot(T.pmra, T.pmdec)/1000, yrs = (SCIENCE_END - SCIENCE_START)/365.25, mv = pm*yrs;
+    trk = SURVEY_EPOCHS.map(jd => [jd, targetEqAt(T, jd)]); trk.now = targetEqAt(T, sim.jd);
+    $('anaTarget').innerHTML = [['Catalogue', `ESA Gaia DR3 ${esc(T.gaia_dr3)} · G = ${T.g.toFixed(2)}`], ['Note', esc(T.note || '')], ['Proper motion', pm.toFixed(3) + '″ per year'],
+      ['Distance', T.parallax > 0 ? (1000/T.parallax).toFixed(T.parallax > 100 ? 2 : 0) + ' pc · ' + (3261.56/T.parallax).toFixed(T.parallax > 100 ? 2 : 0) + ' light-years' : '—'],
+      ['Moves during the SPHEREx survey', `${mv.toFixed(1)}″ ≈ ${(mv/SPHEREX_PIX).toFixed(1)} SPHEREx pixels (6.15″)`]].map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+  } else if (T) $('anaTarget').innerHTML = `<div class="v"><span>Source</span><span>${esc(T.source || '')}</span></div>` + (T.note ? `<div class="v"><span>Note</span><span>${esc(T.note)}</span></div>` : '') + (T.typed ? '' : '<div class="v"><span>Proper motion</span><span>not in Gaia: position not moved</span></div>');
+  else $('anaTarget').innerHTML = '';
+  $('anaJSON').textContent = JSON.stringify(P, null, 2);
+  $('anaCopy').textContent = 'Copy coordinates';
+  // the most important answer first: can SPHEREx see it, and if not, when
+  const vis = t.spherex_visibility, nx = vis.visible_now ? null : nextVisible(dir);
+  $('anaVis').className = vis.visible_now ? 'ok' : 'no';
+  $('anaVis').innerHTML = vis.visible_now ? `<b>✓ SPHEREx can see this point right now</b><span>It is ${t.sun_elongation_deg.toFixed(0)}° from the Sun (the limit is 91°) and not behind Earth.</span>`
+    : `<b>✕ Outside SPHEREx's view right now</b><span>${vis.behind_earth && vis.sun_limit_ok ? 'Earth is in the way at this moment.' : `It is only ${t.sun_elongation_deg.toFixed(0)}° from the Sun; SPHEREx never points closer than 91°.`} ${nx || ''}</span>`;
+  const inSpan = inDataSpan(sim.jd);
+  $('anaViz').hidden = !vis.visible_now || !inSpan;          // no image box outside SPHEREx's view or outside the dates it has data for
+  if (!inSpan) $('anaVis').innerHTML += `<span class="span">No SPHEREx images exist for this date: its data run from ${utc(DATA_FIRST)} to ${utc(dataLatest())}. Use “Jump to…” in the time bar to go there.</span>`;
+  else if (sim.jd > nowJD() - 60) $('anaVis').innerHTML += '<span class="span">Images from the last 60 days may not be released by IRSA yet.</span>';
+  P.target.spherex_next_visible = nx;
+  $('anaJSON').textContent = JSON.stringify(P, null, 2);
+  $('anaBack').hidden = false; $('ana').scrollTop = 0; $('anaPayload').open = false; $('anaClose').focus({preventScroll: true});
+  clickMark = {dir, ok: vis.visible_now, t: performance.now()};
+  drawPatchMap(t.ra_deg, t.dec_deg, hw, trk, null);
+  // known asteroids and comets in the patch on this date (NASA/JPL SB Ident)
+  const id = ++anaReq;
+  $('anaSB').innerHTML = '<div class="sbh">Known asteroids and comets in the patch</div><div class="dim">Asking NASA/JPL…</div>';
+  fetch(`/api/sbident?ra=${t.ra_deg}&dec=${t.dec_deg}&jd=${sim.jd}&hw=${hw}`).then(r => r.json()).then(d => {
+    if (id !== anaReq) return;
+    if (d.error) { sbFailed(); return; }
+    P.known_small_bodies = {count: d.count, time_utc: d.time_utc, source: d.source, objects: d.objects}; $('anaJSON').textContent = JSON.stringify(P, null, 2);
+    drawPatchMap(t.ra_deg, t.dec_deg, hw, trk, d.objects);
+    $('anaSB').innerHTML = `<div class="sbh">Known asteroids and comets in the patch · ${d.count}</div>` + (d.count ? `<table><tr><th>Object</th><th>V mag</th><th>Offset E, N</th><th>Motion</th></tr>` +
+      d.objects.slice(0, 15).map(o => `<tr><td>${esc(o.name)}</td><td>${o.v == null ? '—' : o.v.toFixed(1)}</td><td>${o.east_arcmin.toFixed(1)}′, ${o.north_arcmin.toFixed(1)}′</td><td>${o.rate_ra_arcsec_h == null ? '—' : Math.hypot(o.rate_ra_arcsec_h, o.rate_dec_arcsec_h).toFixed(0) + '″/h'}</td></tr>`).join('') + '</table>' +
+      (d.count > 15 ? `<div class="dim" style="margin-top:4px">and ${d.count - 15} fainter (all in the backend data)</div>` : '') : '<div class="dim">None on this date.</div>') +
+      `<div class="dim" style="margin-top:4px">${esc(d.source)}, seen from Earth's centre at ${esc(d.time_utc)} UTC.</div>`;
+  }).catch(() => { if (id === anaReq) sbFailed(); });
+  // NASA/JPL (or our server) did not answer: leave the section out entirely rather than show an error
+  function sbFailed() { $('anaSB').innerHTML = ''; drawPatchMap(t.ra_deg, t.dec_deg, hw, trk, []); }
+  requestAnalysis(P);                                         // offers the SPHEREx images of this patch (button)
+}
+// The patch as a little map (gnomonic, north up, east left like a sky image): the target's predicted positions at the
+// SPHEREx survey dates (ESA Gaia proper motion) and the known asteroids and comets with their motion over 2 hours (NASA/JPL).
+// SPHEREx science data: from 1 May 2025 (start of the survey) to now, until the mission ends; IRSA releases each week's
+// images within 60 days of observation (IPAC SPHEREx Explanatory Supplement, sec. 2.1-2.2).
+const utc = jd => fmtDate(jd, false) + ' UTC';                     // 'YYYY-MM-DD hh:mm UTC'
+const DATA_FIRST = 2460796.5, dataLatest = () => Math.min(nowJD(), 2461557.5), inDataSpan = jd => jd >= DATA_FIRST && jd <= dataLatest();
+const SCIENCE_START = 2460796.5, SCIENCE_END = 2461557.5, SURVEY_EPOCHS = [0, 1, 2, 3, 4].map(i => SCIENCE_START + i*182.6).filter(jd => jd <= SCIENCE_END);
+function drawPatchMap(ra0, dec0, hw, trk, objs) {
+  const cvs = $('anaMap'), g = cvs.getContext('2d'), Wm = cvs.width, Hm = cvs.height, S = Math.min(Wm, Hm)*0.92/(2*hw*60);   // px per arcmin
+  const a0 = ra0*D2R, d0 = dec0*D2R, c0 = [Math.cos(d0)*Math.cos(a0), Math.cos(d0)*Math.sin(a0), Math.sin(d0)], e = [-Math.sin(a0), Math.cos(a0), 0], n = cross(c0, e);
+  const off = (ra, dec) => { const a = ra*D2R, d = dec*D2R, u = [Math.cos(d)*Math.cos(a), Math.cos(d)*Math.sin(a), Math.sin(d)], w = dot(u, c0); return [dot(u, e)/w/D2R*60, dot(u, n)/w/D2R*60]; };
+  const X = x => Wm/2 - x*S, Y = y => Hm/2 - y*S;                                                  // east to the left
+  g.clearRect(0, 0, Wm, Hm);
+  const box = hw*60*S; g.strokeStyle = '#34436a'; g.lineWidth = 1; g.strokeRect(Wm/2 - box, Hm/2 - box, 2*box, 2*box);
+  g.setLineDash([2, 4]); g.beginPath(); g.moveTo(Wm/2, Hm/2 - box); g.lineTo(Wm/2, Hm/2 + box); g.moveTo(Wm/2 - box, Hm/2); g.lineTo(Wm/2 + box, Hm/2); g.stroke(); g.setLineDash([]);
+  g.font = '11px system-ui'; g.fillStyle = '#6c7a9c'; g.fillText((2*hw*60).toFixed(0) + '′', Wm/2 + box - 26, Hm/2 + box - 6);
+  const pix = SPHEREX_PIX/60*S; if (pix >= 2) { g.strokeStyle = '#4a5f94'; g.strokeRect(Wm/2 - box + 8, Hm/2 + box - 8 - pix, pix, pix); g.fillText('1 SPHEREx pixel', Wm/2 - box + 12 + pix, Hm/2 + box - 9); }
+  let leg = [];
+  if (objs && objs.length) {
+    for (const o of objs) { const [x, y] = [o.east_arcmin, o.north_arcmin], r = o.v == null ? 2 : clamp(5.5 - (o.v - 14)*0.45, 1.5, 5.5);
+      g.fillStyle = '#e2a45f'; g.beginPath(); g.arc(X(x), Y(y), r, 0, 7); g.fill();
+      if (o.rate_ra_arcsec_h != null) { const dx = o.rate_ra_arcsec_h*2/60, dy = o.rate_dec_arcsec_h*2/60; g.strokeStyle = '#e2a45f99'; g.beginPath(); g.moveTo(X(x), Y(y)); g.lineTo(X(x + dx), Y(y + dy)); g.stroke(); } }
+    leg.push('<span style="color:#e2a45f">●</span> known asteroids/comets (line: motion over 2 hours)');
+  }
+  if (trk) {
+    const pts = trk.map(([jd, [ra, dec]]) => [jd, off(ra, dec)]), span = Math.max(...pts.map(p => Math.hypot(p[1][0] - pts[0][1][0], p[1][1] - pts[0][1][1])));
+    const zoom = span*S < 40 && span > 0 ? Math.min(400, 40/(span*S)) : 1;                         // too small to see: magnify the track around the centre
+    const cx = pts[Math.floor(pts.length/2)][1];
+    const P = q => [X(cx[0] + (q[0] - cx[0])*zoom), Y(cx[1] + (q[1] - cx[1])*zoom)];
+    g.strokeStyle = '#5fd6f0'; g.lineWidth = 1.2; g.beginPath(); pts.forEach(([, q], i) => { const [x, y] = P(q); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    pts.forEach(([jd, q], i) => { const [x, y] = P(q); g.fillStyle = '#5fd6f0'; g.beginPath(); g.arc(x, y, 3.2, 0, 7); g.fill();
+      if (i === 0 || i === pts.length - 1) { g.fillStyle = '#9fe6f7'; g.fillText(fmtDate(jd, false).slice(0, 7), x + 9, y + (i === 0 ? 12 : -6)); } });
+    const [nx, ny] = P(off(...trk.now)); g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.beginPath(); g.arc(nx, ny, 7, 0, 7); g.stroke();
+    leg.push('○ position on the date shown');
+    leg.push('<span style="color:#5fd6f0">●</span> target at each 6-month SPHEREx sky survey (ESA Gaia proper motion)' + (zoom > 1 ? ` · track magnified ×${zoom.toFixed(0)}` : ''));
+  } else { g.strokeStyle = '#5fd6f0'; g.lineWidth = 1.4; g.beginPath(); g.arc(Wm/2, Hm/2, 6, 0, 7); g.stroke(); leg.push('<span style="color:#5fd6f0">○</span> patch centre'); }
+  if (objs === null) leg.push('asking NASA/JPL for known asteroids…');
+  $('anaLegend').innerHTML = leg.join('<br>');
+}
+function closeAnalysis() { $('anaBack').hidden = true; clearInterval(spxTimer); $('spxPlay').textContent = '▶'; }
+
+// ================================================================================ main loop ===
+let last = performance.now(), ema = 16.7, slowFrames = 0, lastAdapt = 0, lastUI = 0, lastCoord = 0;
+const perf = {n: 0, ms: 0, max: 0}, noAdapt = location.search.includes('noadapt'), showPerf = location.search.includes('perf');
+if (showPerf) $('perf').style.display = 'block';
+let spin = false, spinTilt = 0, spinEcl = false;
+function frame(t) {
+  const dtRaw = t - last, dtm = Math.min(0.1, dtRaw/1000); last = t; const t0 = performance.now();
+  advanceTime(dtm); ensureData();
+  if (!anim) {
+    const d = ztGoal - zt; if (Math.abs(d) > 1e-5) { zt += d*(1 - Math.exp(-dtm*30)); if (Math.abs(zt - +$('zoom').value) > 2e-4) $('zoom').value = zt; }
+  }
+  ctx.clearRect(0, 0, W, H); hits = [];
+  if (viewAnim && viewAnim(t)) viewAnim = null;
+  if (spin && !dragging) {
+    const a = 0.25*dtm;
+    if (spinEcl) { const c = Math.cos(a), sn = Math.sin(a); R = R.map(r => [c*r[0] + sn*r[1], -sn*r[0] + c*r[1], r[2]]); orthonormalize(); }   // about the ecliptic north pole
+    else { const t = spinTilt*D2R, n = [Math.sin(t), Math.cos(t), 0], k = a, c = Math.cos(k), sn = Math.sin(k), v = 1 - c;
+      applyView([[c + n[0]*n[0]*v, n[0]*n[1]*v, n[1]*sn], [n[0]*n[1]*v, c + n[1]*n[1]*v, -n[0]*sn], [-n[1]*sn, n[0]*sn, c]]); }   // Rodrigues rotation about the chosen screen-plane axis
+  }
+  const ready = sky && updateScene();
+  if (ready) {
+    updateStars();
+    draw3D(); pickHit();
+    if (t - lastCoord > 50) { lastCoord = t; updateCoords(); }
+    if (t - lastUI > 120) { lastUI = t; updateUI(); if (t - trackListT > 2000) refreshTrackList(); }
+    const ld = $('loading'); if (ld) { ld.remove(); $('fade').classList.add('gone'); setTimeout(() => { const f = $('fade'); if (f) f.remove(); }, 1600); }
+  }
+  const ms = performance.now() - t0; perf.n++; perf.ms += ms; perf.max = Math.max(perf.max, ms);
+  if (dtRaw < 250) ema += (dtRaw - ema)*0.08;
+  slowFrames = ema > 34 ? slowFrames + 1 : 0;
+  if (!noAdapt && slowFrames > 60 && K > 0.61 && t - lastAdapt > 1200) { resScale *= 0.8; applyRes(); lastAdapt = t; slowFrames = 0; }
+  if (showPerf && perf.n % 20 === 0) $('perf').textContent = `${(1000/ema).toFixed(0)} fps · draw ${(perf.ms/perf.n).toFixed(1)} ms (max ${perf.max.toFixed(0)}) · canvas x${K.toFixed(2)}`;
+  if (perf.n % 120 === 0) { perf.ms = 0; perf.max = 0; perf.n = 1; }
+  requestAnimationFrame(frame);
+}
+
+// ======================================================================================== UI ===
+function updateUI() {
+  const jd = sim.jd, rate = simRate();
+  setText('clock', fmtDate(jd) + ' UTC');
+  const dyr = (jd - nowJD())/365.25, dd = jd - nowJD();
+  const badge = $('badge'); badge.textContent = sim.live ? 'LIVE' : (rate === 0 ? 'PAUSED' : 'SIMULATED'); badge.className = 'badge ' + (sim.live ? 'live' : 'sim');
+  let note = '';
+  if (!sim.live) note = Math.abs(dd) < 1.5 ? (dd*24).toFixed(1) + ' h from now' : Math.abs(dyr) < 2 ? dd.toFixed(1) + ' days from now' : (dyr >= 0 ? '+' : '−') + Math.abs(dyr).toLocaleString(undefined, {maximumFractionDigits: Math.abs(dyr) < 100 ? 1 : 0}) + ' years from now';
+  setText('clockNote', note);
+  const sp = state.spherex;
+  setHTML('status', `NASA's infrared sky-mapping telescope is <b>${Math.round(sp.altitude_km).toLocaleString()} km</b> above Earth, circling it every <b>${sp.period_min.toFixed(0)} minutes</b>.`);
+  setHTML('warns', state.warns.length ? '<div class="wh">Note</div>' + state.warns.map(w => `<div>${w}</div>`).join('') : '');
+  setText('advWarn', state.warns.length ? '· ' + state.warns.length + (state.warns.length > 1 ? ' notes' : ' note') : '');
+  if (document.activeElement !== $('dateIn')) $('dateIn').value = fmtDate(jd, false);
+  setText('tSpan', 'SPHEREx data ' + fmtDate(DATA_FIRST, false) + ' → ' + utc(dataLatest()) + ' ·');
+  if (!window._jl || performance.now() - window._jl > 60000) { window._jl = performance.now(); $('jumpLatest').textContent = 'Latest data · ' + utc(dataLatest()); }
+  setText('tHint', sim.live ? 'live' : rate === 0 ? 'paused' : (rate < 0 ? 'rewinding · ' : 'playing · ') + RATES[sim.rateIdx][0]);
+  for (const [id, b] of [['rev', !sim.live && sim.dir < 0], ['fwd', !sim.live && sim.dir > 0], ['pause', !sim.live && sim.dir === 0]]) $(id).classList.toggle('on', b);
+  $('live').classList.toggle('on', sim.live);
+  if (!$('advScroll').hidden) setHTML('adv', advancedHTML(sp));
+}
+// ---- advanced orbital parameters (for the curious): the orbit as an astronomer would list it
+function advancedHTML(sp) {
+  const mod = (x, m) => ((x % m) + m) % m, deg = x => x.toFixed(3) + '°', f = (x, d) => x.toLocaleString(undefined, {minimumFractionDigits: d, maximumFractionDigits: d});
+  const nE = ecl2eqVec(snap.n), pE = ecl2eqVec(norm(sp.off)), sunE = ecl2eqVec(state.sun_dir);        // equatorial J2000 (the frame orbit elements are quoted in)
+  const inc = Math.acos(clamp(nE[2], -1, 1))/D2R, node = norm([-nE[1], nE[0], 0]);
+  const raan = mod(Math.atan2(node[1], node[0])/D2R, 360), argLat = mod(Math.atan2(dot(cross(node, pE), nE), dot(node, pE))/D2R, 360);
+  const beta = Math.asin(clamp(dot(nE, sunE), -1, 1))/D2R, sunRA = mod(Math.atan2(sunE[1], sunE[0])/D2R, 360), ltan = mod(12 + (raan - sunRA)/15, 24);
+  const aKm = snap.a_km, v = 2*Math.PI*aKm/(snap.period_min*60), E = state.E, y = yearsSince2000(sim.jd), vis = skyFractions();
+  const hm = h => { const H = Math.floor(h), M = Math.round((h - H)*60); return String(M === 60 ? H + 1 : H).padStart(2, '0') + ':' + String(M === 60 ? 0 : M).padStart(2, '0'); };
+  const grp = (t, rows) => `<div class="grp">${t}</div>` + rows.map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+  return grp('Orbit around Earth · J2000 equatorial', [
+      ['Semi-major axis  a', f(aKm, 1) + ' km'], ['Eccentricity  e', '≈ 0 (circular model)'], ['Inclination  i', deg(inc)], ['RA of ascending node  Ω', deg(raan)],
+      ['Argument of latitude  u', deg(argLat)], ['Period', f(snap.period_min, 2) + ' min'], ['Mean motion', f(1440/snap.period_min, 3) + ' rev/day'], ['Orbital speed', f(v, 3) + ' km/s'], ['Altitude', f(sp.altitude_km, 1) + ' km']])
+    + grp('Sun-synchronous geometry', [['Beta angle  β', deg(beta)], ['Ascending node, local time', hm(ltan)]])
+    + grp('What SPHEREx can see', [
+      ['One exposure (field of view)', FOV_DEG[0] + '° × ' + FOV_DEG[1] + '°'], ['One exposure (solid angle)', f(FOV_SR*SR2DEG2, 1) + ' deg² · ' + f(FOV_SR*1000, 1) + ' msr'],
+      ['Visible now', f(vis.now*100, 1) + '% of the sky · ' + f(vis.now*4*Math.PI, 2) + ' sr'],
+      ['Hidden by Earth now', f((vis.sun - vis.now)*100, 1) + '% · disc radius ' + vis.rhoDeg.toFixed(1) + '°'],
+      ['Visible overall (Sun limit)', f(vis.sun*100, 1) + '% · ' + f(vis.sun*4*Math.PI, 2) + ' sr'],
+      ['Over six months', 'the whole sky']])
+    + grp('Position · J2000 ecliptic', [
+      ['Distance from Sun', f(sp.helio_dist_au, 5) + ' AU'], ['Distance from Earth centre', f(sp.earth_dist_km, 0) + ' km'], ['Longitude / latitude', sp.ecl_lon_deg.toFixed(3) + '° / ' + sp.ecl_lat_deg.toFixed(3) + '°'],
+      ['X (heliocentric)', f(sp.pos[0], 5) + ' AU'], ['Y', f(sp.pos[1], 5) + ' AU'], ['Z', f(sp.pos[2], 5) + ' AU'], ['Earth–Sun distance', f(Math.hypot(...E), 5) + ' AU']])
+    + grp('Time and data', [['Julian date (UTC)', f(sim.jd, 5)], ['Planet positions', state.from === 'track' ? (meta ? meta.ephemeris : '…') : 'JPL mean orbital elements'], ['SPHEREx orbit', sp.source], ['Star positions', 'epoch J2000 ' + (y >= 0 ? '+' : '−') + Math.abs(y).toLocaleString(undefined, {maximumFractionDigits: 1}) + ' yr']])
+    + '<div class="dim" style="font-size:11px;margin-top:6px;line-height:1.35">The design node time of SPHEREx is 06:00 (IPAC). Visibility uses the official 91° Sun limit and the real disc of Earth; SPHEREx also avoids the Moon and its flight direction, but those angles are not published, so they are not included. The eccentricity is not measured here: the orbit is drawn as a circle (the real one is within about 0.001 of circular). Orbit shape and phase come from the latest NASA/JPL Horizons state; the elements above are derived from it.</div>';
+}
+function animateTo(target, ms) {
+  const from = zt, t0 = performance.now();
+  anim = t => { const k = Math.min(1, (t - t0)/ms), e = k < .5 ? 2*k*k : 1 - Math.pow(-2*k + 2, 2)/2; zt = ztGoal = from + (target - from)*e; $('zoom').value = zt; return k >= 1; };
+  (function step(t) { if (anim && !anim(t)) requestAnimationFrame(step); else anim = null; })(performance.now());
+}
+function zoomBy(delta) { anim = null; ztGoal = clamp(ztGoal + delta*0.9, 0, 1); }
+function goDate() { const jd = parseDate($('dateIn').value); if (jd === null || jd < DATA_FIRST - 1 || jd > dataLatest() + 1) { $('dateIn').style.borderColor = '#ff6b6b'; $('dateIn').title = 'Pick a UTC date between ' + utc(DATA_FIRST) + ' and ' + utc(dataLatest()) + ' (the SPHEREx data)'; return; } $('dateIn').style.borderColor = ''; const wasRealTime = sim.live || (sim.dir === 1 && sim.rateIdx === 0); setJD(jd); if (wasRealTime) sim.dir = 0; $('dateIn').blur(); }   // a jump from real time pauses on the chosen instant
+function initUI() {
+  $('speed').innerHTML = RATES.map((r, i) => `<option value="${i}">${r[0]}</option>`).join('');
+  $('speed').onchange = () => { sim.rateIdx = +$('speed').value; if (sim.rateIdx !== 0 || sim.dir !== 1) sim.live = false; if (sim.dir === 0) sim.dir = 1; };
+  $('fwd').onclick = () => { sim.dir = 1; if (sim.live && sim.rateIdx === 0) return; sim.live = false; };
+  $('rev').onclick = () => { sim.dir = -1; sim.live = false; };
+  $('pause').onclick = () => { if (sim.live) { sim.live = false; sim.dir = 0; } else sim.dir = sim.dir === 0 ? 1 : 0; };
+  $('live').onclick = () => { sim.live = true; sim.dir = 1; sim.rateIdx = 0; $('speed').value = 0; sim.jd = nowJD(); };
+  $('go').onclick = goDate;
+  $('jump').onchange = () => { const v = $('jump').value; $('jump').value = ''; if (!v) return;
+    setJD(v === 'first' ? DATA_FIRST : dataLatest()); sim.dir = 0; $('jump').blur(); };   // jump there and pause
+  $('dateIn').addEventListener('keydown', e => { if (e.key === 'Enter') goDate(); e.stopPropagation(); });
+  $('reset').onclick = () => { R = matFromYawPitch(-0.5, 1.0); focusId = null; renderChips(); };
+  $('spin').onclick = () => { spin = !spin; $('spin').classList.toggle('on', spin); $('spinPanel').hidden = !spin; };
+  const setTilt = (v, ecl = false) => { spinTilt = v; spinEcl = ecl; $('spinAxis').value = v; setText('spinVal', ecl ? 'ecliptic pole' : v + '°'); $('spinE').classList.toggle('on', ecl); };
+  $('spinAxis').oninput = () => setTilt(+$('spinAxis').value);
+  $('spinV').onclick = () => setTilt(0); $('spinH').onclick = () => setTilt(90); $('spinE').onclick = () => setTilt(0, true);
+  $('gotoBtn').onclick = () => { const h = $('gotoPanel').hidden; $('gotoPanel').hidden = !h; $('gotoArrow').textContent = h ? '▴' : '▾'; if (h) $('gRA').focus(); };
+  $('gTarget').onchange = () => { const T = targets[+$('gTarget').value]; if (!T) return; const [ra, dec] = [T.ra, T.dec]; $('gRA').value = ra.toFixed(6); $('gDec').value = dec.toFixed(6);
+    $('gMsg').className = 'dim'; $('gMsg').textContent = T.pmra != null ? `ESA Gaia DR3 position at J${T.epoch}, moved with its proper motion to the date shown.` : 'Coordinates from the challenge text; not in Gaia, so not moved.'; };
+  for (const id of ['gRA', 'gDec']) $(id).addEventListener('keydown', e => { if (e.key === 'Enter') goToTyped(); e.stopPropagation(); });
+  $('gGo').onclick = goToTyped; $('gPix').oninput = showPatchInfo; showPatchInfo();
+  $('trackBtn').onclick = () => { const h = $('trackPanel').hidden; $('trackPanel').hidden = !h; $('tools').classList.toggle('wide', h); $('trackArrow').textContent = h ? '▴' : '▾'; if (h) { refreshTrackList(); $('tq').focus(); } };
+  $('tq').oninput = refreshTrackList; for (const id of ['fShow', 'fOnly']) $(id).onchange = refreshTrackList;
+  $('tq').addEventListener('keydown', e => { if (e.key === 'Enter') { const first = $('tList').querySelector('.ti'); if (first && !first.classList.contains('on')) toggleTrack(first.dataset.id); else if (!first && $('tq').value.trim()) jplLookup($('tq').value.trim()); } e.stopPropagation(); });
+  $('tList').onclick = e => { const t = e.target.closest('.ti'); if (t) toggleTrack(t.dataset.id); };
+  $('tLookup').onclick = () => jplLookup($('tq').value.trim());
+  $('tMsg').onclick = e => { const a = e.target.closest('a[data-des]'); if (a) { e.preventDefault(); jplLookup(a.dataset.des); } };
+  $('trackChips').onclick = e => { const c = e.target.closest('.chip'); if (!c) return; const id = c.dataset.id;
+    if (e.target.closest('.cx')) toggleTrack(id); else if (e.target.closest('.cf')) { focusId = focusId === id ? null : id; renderChips(); } };
+  $('layersBtn').onclick = () => { const h = $('layers').hidden; $('layers').hidden = !h; $('layersBtn').textContent = 'Layers ' + (h ? '▴' : '▾'); };
+  $('advBtn').onclick = () => { const h = $('advScroll').hidden; $('advScroll').hidden = !h; $('advArrow').textContent = h ? '▴' : '▾'; if (h) updateUI(); };
+  $('zoom').oninput = () => { anim = null; ztGoal = +$('zoom').value; };
+  $('zSphx').onclick = () => { focusId = null; renderChips(); animateTo(1, 2200); }; $('zSys').onclick = () => animateTo(tFit(), 1600); $('zFar').onclick = () => animateTo(0, 1600);
+  cv.addEventListener('wheel', e => { e.preventDefault(); zoomBy(clamp(-e.deltaY*(e.deltaMode === 1 ? 33 : 1), -120, 120)*0.0006); }, {passive: false});   // one mouse-wheel notch = ~5% of the zoom range
+  const pointers = new Map(); let prevPinch = null;
+  cv.onpointerdown = e => { pointers.set(e.pointerId, [e.clientX, e.clientY]); cv.setPointerCapture(e.pointerId); dragging = true; cv.classList.add('drag'); prevPinch = null; };
+  cv.onpointerup = cv.onpointercancel = e => { pointers.delete(e.pointerId); prevPinch = null; if (!pointers.size) { dragging = false; cv.classList.remove('drag'); } };
+  cv.onpointermove = e => {
+    cursor = [e.clientX, e.clientY]; const p = pointers.get(e.pointerId); if (!p) return;
+    if (pointers.size === 1) { const dx = (e.clientX - p[0])*0.005, dy = (e.clientY - p[1])*0.005; if (e.shiftKey || e.buttons & 2) rotateBy(0, 0, dx); else rotateBy(dx, dy, 0); }
+    else if (pointers.size === 2) { pointers.set(e.pointerId, [e.clientX, e.clientY]); const [a, b] = [...pointers.values()], d = Math.hypot(a[0]-b[0], a[1]-b[1]), ang = Math.atan2(b[1]-a[1], b[0]-a[0]);
+      if (prevPinch) { zoomBy(Math.log(d/prevPinch.d)*0.5); rotateBy(0, 0, ang - prevPinch.ang); } prevPinch = {d, ang}; return; }
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+  };
+  cv.ondblclick = e => openAnalysis(e.clientX, e.clientY);
+  let introSeen = false; try { introSeen = localStorage.getItem('xarvis.introSeen') === '1'; } catch (err) {}
+  $('intro').hidden = introSeen; if (!introSeen) requestAnimationFrame(() => $('intro').classList.add('show'));
+  const closeIntro = () => { introSeen = $('introSkip').checked; try { if ($('introSkip').checked) localStorage.setItem('xarvis.introSeen', '1'); else localStorage.removeItem('xarvis.introSeen'); } catch (err) {} $('intro').classList.add('out'); setTimeout(() => { $('intro').hidden = true; $('intro').classList.remove('out'); }, 450); };
+  $('introGo').onclick = closeIntro;
+  $('intro').onclick = e => { if (e.target === $('intro')) closeIntro(); };
+  $('helpLink').onclick = e => { e.preventDefault(); $('introSkip').checked = introSeen; $('intro').hidden = false; $('intro').classList.remove('show'); requestAnimationFrame(() => requestAnimationFrame(() => $('intro').classList.add('show'))); $('introGo').focus(); };
+  $('anaX').onclick = $('anaClose').onclick = closeAnalysis;
+  $('spxGo').onclick = spxStart; $('spxMode').onchange = spxMode; $('spxDet').onchange = spxDraw; $('spxSlider').oninput = spxDraw;
+  $('spxPlay').onclick = () => { if (spxTimer) { clearInterval(spxTimer); spxTimer = null; $('spxPlay').textContent = '▶'; return; }
+    $('spxPlay').textContent = '❚❚'; spxTimer = setInterval(() => { const s = $('spxSlider'); s.value = +s.value >= +s.max ? 1 : +s.value + 1; spxDraw(); }, 450); };
+  $('anaBack').onclick = e => { if (e.target === $('anaBack')) closeAnalysis(); };
+  $('anaCopy').onclick = async () => { try { await navigator.clipboard.writeText(JSON.stringify(anaPayloadNow, null, 2)); $('anaCopy').textContent = 'Copied'; } catch (err) { $('anaCopy').textContent = 'Copy failed'; } };
+  cv.onpointerleave = () => { cursor = null; }; cv.oncontextmenu = e => e.preventDefault();
+  addEventListener('keydown', e => { if (!$('intro').hidden) { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); $('introGo').click(); } return; } if (!$('anaBack').hidden) { if (e.key === 'Escape') closeAnalysis(); return; } if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; const st = 0.06;
+    if (e.key === 'q' || e.key === 'Q') rotateBy(0, 0, -st); else if (e.key === 'e' || e.key === 'E') rotateBy(0, 0, st);
+    else if (e.key === 'ArrowLeft') rotateBy(-st, 0, 0); else if (e.key === 'ArrowRight') rotateBy(st, 0, 0); else if (e.key === 'ArrowUp') rotateBy(0, -st, 0); else if (e.key === 'ArrowDown') rotateBy(0, st, 0);
+    else if (e.key === ' ') { e.preventDefault(); $('pause').click(); } else if (e.key === 'l' || e.key === 'L') $('live').click(); });
+  addEventListener('resize', resize);
+}
+
+// ===================================================================================== boot ===
+(async function boot() {
+  setTimeout(() => { const f = $('fade'); if (f) f.classList.add('gone'); }, 8000);   // never leave the page black if data is slow
+  resize(); initUI(); zt = ztGoal = tFit(); $('zoom').value = zt;
+  try { meta = await api('/api/meta'); } catch (e) { console.warn('meta', e); meta = {launch_jd: 2460746.6325, science_start_jd: 2460796.5, science_end_jd: 2461557.5, ephemeris: 'unavailable', de_start_jd: null}; }
+  loadSky(); loadSmallBodies(); loadTargets().then(applyUrl);
+  requestAnimationFrame(frame);
+})();
+// test hooks (used by the verification scripts)
+window.baseRectsCount = () => baseRects.length;
+window.XARVIS = {visGeom: () => visGeom(), visCv, skyDirAt, skyXY, toView, skyScale, get W() { return W; }, get H() { return H; }, tracked: () => [...tracked.values()], catalog: () => catalog, get labelRects() { return labelRects; }, sim, setJD, updateScene, updateStars, kepler, trackEval, scratch, get state() { return state; }, get sky() { return sky; }, get track() { return track; }, get snap() { return snap; }, advanceTime, RATES, nowJD, fmtDate, parseDate, ecl2gal, ecl2eq, skyDirAt, get R() { return R; }, set R(v) { R = v; }};
+</script>
+</body>
+</html>

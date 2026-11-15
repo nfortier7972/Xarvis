@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found · XARVIS</title>
+<link rel="stylesheet" href="/static/site.css">
+<style>
+  body { min-height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+  .sky { position:fixed; inset:0; z-index:-1; background:
+      radial-gradient(1px 1px at 12% 22%, #fff9 50%, transparent 51%), radial-gradient(1px 1px at 78% 14%, #fff8 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 33% 71%, #cfe3ff 50%, transparent 51%), radial-gradient(1px 1px at 62% 48%, #fff7 50%, transparent 51%),
+      radial-gradient(1px 1px at 88% 66%, #fff9 50%, transparent 51%), radial-gradient(1.5px 1.5px at 22% 88%, #ffe3c4 50%, transparent 51%),
+      radial-gradient(1px 1px at 48% 9%, #fff6 50%, transparent 51%), radial-gradient(1px 1px at 92% 38%, #fff8 50%, transparent 51%),
+      radial-gradient(1px 1px at 6% 52%, #fff7 50%, transparent 51%), radial-gradient(1px 1px at 70% 90%, #fff8 50%, transparent 51%),
+      radial-gradient(ellipse at 50% 120%, #00b5e21a, transparent 60%), var(--bg); animation:drift 60s linear infinite; }
+  @keyframes drift { from { background-position:0 0; } to { background-position:-200px 40px; } }
+  main { flex:1; display:flex; align-items:center; justify-content:center; text-align:center; padding:40px 20px; }
+  .code { font-size:96px; font-weight:700; letter-spacing:.12em; line-height:1; color:transparent; -webkit-text-stroke:1px #4a5f94; }
+  .ring { width:120px; height:120px; border:1.5px dashed #ff9d6b99; border-radius:50%; margin:-108px auto 24px; animation:spin 30s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  h1 { margin-top:6px; } .row { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:22px; }
+  @media (prefers-reduced-motion:reduce) { .sky, .ring { animation:none; } }
+</style>
+</head>
+<body>
+<div class="sky"></div>
+<header class="top"><div class="wrap"><a class="brand" href="/">XARVIS <span>Where is SPHEREx?</span></a><a class="btn" href="/">Open the viewer</a></div></header>
+<main>
+  <div>
+    <div class="code">404</div>
+    <div class="ring" aria-hidden="true"></div>
+    <div class="kicker">Outside the field of view</div>
+    <h1>This page drifted out of sight</h1>
+    <p class="lead dim" style="max-width:520px;margin:0 auto">Even SPHEREx can't see everything at once. The page you asked for isn't here; it may have moved, or the link may be mistyped.</p>
+    <div class="row"><a class="btn" href="/">Back to the viewer</a><a class="btn ghost" href="/about">About XARVIS</a></div>
+  </div>
+</main>
+</body>
+</html>

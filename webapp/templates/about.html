@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About XARVIS</title>
+<link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="/">XARVIS <span>About</span></a>
+  <nav class="toc"><a href="#challenge">Challenge</a><a href="#features">Features</a><a href="#data">Data</a><a href="#checks">Accuracy</a><a href="#decisions">Decisions</a><a href="#next">Next</a></nav>
+  <a class="btn" href="/">Open the viewer</a>
+</div></header>
+<main class="wrap">
+  <div class="kicker" style="margin-top:40px">NASA Space Apps Challenge 2026 · Planet X and SPHEREx</div>
+  <h1>eXplorable Astronomical Record Viewer for Infrared Surveys</h1>
+  <p class="lead">XARVIS is a public web tool for exploring NASA's SPHEREx infrared sky survey. It shows where the telescope is and what it can see, lets anyone point at a patch of sky by its coordinates, and lines that patch up with the stars and asteroids known to be there, so changes over time stand out.</p>
+
+  <h2 id="challenge">The challenge</h2>
+  <p>SPHEREx (Spectro-Photometer for the History of the Universe, Epoch of Reionization and Ices Explorer) launched on 12 March 2025 into a sun-synchronous orbit about 650–700 km above Earth. Over its 25-month mission it maps the entire sky in 102 infrared colours (0.75–5 µm), once every six months. Anything that moves between those maps, such as a nearby brown dwarf, an asteroid or a distant undiscovered planet, shows up as a change from one visit to the next.</p>
+  <p>The challenge asks for a public tool where users enter the coordinates of a patch of sky and watch SPHEREx's images of it play like a short video. It names five test targets: Barnard's Star, Epsilon Indi B, WISE 0855-0714, RW Aurigae and R Draconis.</p>
+
+  <h2 id="features">What XARVIS does today</h2>
+  <div class="grid">
+    <div class="tile"><b>SPHEREx, live</b><span>The telescope's real orbit around Earth, with the planets, the Moon, 12,700 real asteroids and the stars, at this moment.</span></div>
+    <div class="tile"><b>What SPHEREx can see</b><span>The sky it can point at right now (91° from the Sun and not behind Earth), and everything it can reach over an orbit.</span></div>
+    <div class="tile"><b>Go to coordinates</b><span>Type RA/Dec or pick a test target: the view turns to it and the patch opens for analysis. Double-click the sky does the same.</span></div>
+    <div class="tile"><b>Sky point analysis</b><span>Can SPHEREx see it, and when; how far the target moves during the survey (ESA Gaia); which asteroids are in the patch (NASA/JPL).</span></div>
+    <div class="tile"><b>Track any object</b><span>Search and filter asteroids by type, place, size and known/unknown, look up any comet or asteroid live, and follow it.</span></div>
+    <div class="tile"><b>Travel in time</b><span>Play forward or back up to a year per second, or jump to any date, with honest notes when accuracy drops.</span></div>
+  </div>
+
+  <h2 id="data">Data sources</h2>
+  <p>A public science tool has to be trustworthy, so every number comes from a space agency or its science centre, with one dataset per job.</p>
+  <table>
+    <tr><th>Used for</th><th>Dataset</th><th>Official</th></tr>
+    <tr><td>Background stars</td><td><a href="https://gea.esac.esa.int/archive/" target="_blank" rel="noopener">ESA Hipparcos, new reduction</a></td><td class="tag yes">ESA</td></tr>
+    <tr><td>Test targets (positions, motion, distance)</td><td><a href="https://gea.esac.esa.int/archive/" target="_blank" rel="noopener">ESA Gaia DR3</a></td><td class="tag yes">ESA</td></tr>
+    <tr><td>Sun, planets and Moon</td><td><a href="https://ssd.jpl.nasa.gov/planets/eph_export.html" target="_blank" rel="noopener">NASA/JPL DE440s ephemeris</a></td><td class="tag yes">NASA/JPL</td></tr>
+    <tr><td>SPHEREx's orbit; fresh orbits for looked-up objects</td><td><a href="https://ssd.jpl.nasa.gov/horizons/" target="_blank" rel="noopener">NASA/JPL Horizons</a></td><td class="tag yes">NASA/JPL</td></tr>
+    <tr><td>Asteroids and Kuiper-belt objects; object search</td><td><a href="https://ssd.jpl.nasa.gov/tools/sbdb_query.html" target="_blank" rel="noopener">NASA/JPL Small-Body Database</a></td><td class="tag yes">NASA/JPL</td></tr>
+    <tr><td>Known asteroids inside a patch on a date</td><td><a href="https://ssd-api.jpl.nasa.gov/doc/sb_ident.html" target="_blank" rel="noopener">NASA/JPL SB Ident</a></td><td class="tag yes">NASA/JPL</td></tr>
+    <tr><td>Mission facts (field of view, pixel scale, orbit, Sun limit)</td><td><a href="https://irsa.ipac.caltech.edu/Missions/spherex.html" target="_blank" rel="noopener">NASA/IPAC IRSA, SPHEREx Explanatory Supplement</a></td><td class="tag yes">NASA/IPAC</td></tr>
+    <tr><td>Constellation figures and star names</td><td><a href="https://github.com/Stellarium/stellarium-skycultures" target="_blank" rel="noopener">Stellarium sky cultures</a></td><td class="tag no">open source</td></tr>
+  </table>
+  <p class="dim">Stellarium is the one exception: the IAU defines the 88 constellations but publishes no stick figures, so no agency source exists. Features we could not back with official numbers, such as deep-field outlines, were removed rather than guessed.</p>
+
+  <h2 id="checks">How we checked it</h2>
+  <div class="stats">
+    <div class="stat"><b>45 / 45</b><span>motion checks against real events: transits, eclipses, equinoxes, orbital periods</span></div>
+    <div class="stat"><b>&lt; 2″</b><span>SPHEREx's direction from Earth versus NASA/JPL Horizons</span></div>
+    <div class="stat"><b>0.0001 AU</b><span>asteroid positions versus Horizons (Ceres, Eros, Bennu, Apophis…)</span></div>
+    <div class="stat"><b>0.02 mas</b><span>Gaia star motion versus astropy over the whole mission</span></div>
+  </div>
+  <p style="margin-top:14px">The checks live in <code>tools/verify_motion.py</code>. They also caught real bugs during development: a 30-second timing slip in SPHEREx's position, and years-old asteroid orbits that were millions of kilometres off. Both were fixed.</p>
+
+  <h2 id="decisions">Design decisions</h2>
+  <ul>
+    <li><b>Simple first, detail on request.</b> The main screen says in one sentence where SPHEREx is. Orbital elements, accuracy notes and credits sit in a collapsed Advanced section.</li>
+    <li><b>Honest about limits.</b> When something is modelled rather than measured, or accuracy drops (far dates, fast playback), the viewer says so.</li>
+    <li><b>Smooth on ordinary computers.</b> Lines are trimmed to the screen, asteroids are thinned when zoomed out, and resolution adapts if a computer struggles.</li>
+    <li><b>A familiar look.</b> Square panels, small spaced capitals and agency red and blue, in the plain style of NASA, ESA, CSA and JAXA material. It is a style, not an official brand.</li>
+  </ul>
+  <p class="dim">Known limits: star motion uses proper motion only; planets cannot be predicted beyond about ±5,000 years; SPHEREx's Moon and flight-direction avoidance angles are not published, so they are not drawn; WISE 0855-0714 is too faint for Gaia, so it is shown at the challenge's coordinates without motion.</p>
+
+  <h2 id="next">What comes next</h2>
+  <p>Every patch already packages its coordinates, time, SPHEREx's position, the target's motion and the known asteroids. The next step connects it to NASA/IPAC IRSA to fetch the SPHEREx images of that patch and play them as a time-lapse. On top of that come:</p>
+  <ul>
+    <li>stacks per detector array for cleaner images;</li>
+    <li>spectra built on the fly from all 102 bands;</li>
+    <li>adding and subtracting images to reveal movers;</li>
+    <li>Gaia and WISE overlays;</li>
+    <li>shareable links with the coordinates in the URL.</li>
+  </ul>
+</main>
+<footer><div class="wrap">XARVIS is a NASA Space Apps Challenge 2026 project. It is not affiliated with or endorsed by NASA, ESA, CSA, JAXA or IPAC. · <a href="/">Back to the viewer</a></div></footer>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# One line-ending convention for everyone (Windows and Mac): stops whole-file diffs and the merge conflicts they cause
+* text=auto eol=lf
+*.png binary
+*.fits binary
+*.ecsv text
