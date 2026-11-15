@@ -1,0 +1,2412 @@
+diff --git a/AUDIENCE.md b/AUDIENCE.md
+new file mode 100644
+index 0000000..fe1507b
+--- /dev/null
++++ b/AUDIENCE.md
+@@ -0,0 +1,69 @@
++# Who XARVIS is for
++
++XARVIS turns NASA's SPHEREx all-sky survey into something you can look at: pick a point on the sky and see every
++SPHEREx image of it as a time-lapse, with each source named from the catalogs, anything unexplained flagged, and
++any object trackable. This note defines who that is for and what each group can actually do with what is shown.
++It is a working definition for the team, to decide what to build next and what to leave out.
++
++## Primary audience: students, teachers and science-curious visitors
++
++People who know a little astronomy, or none, and want to see real NASA data rather than an artist's impression.
++
++| What XARVIS shows | What they can do with it |
++|---|---|
++| A star's position in every SPHEREx image over the survey | Watch a nearby star (Barnard's Star, the test targets) move against the background: proper motion, measured, not described |
++| Colour from two wavelengths taken at the same instant | See that "redder" means cooler or dustier: compare a brown dwarf with an ordinary star |
++| The 3-D viewer with SPHEREx's real orbit and where it can point | Understand why a telescope can't see everything at once (the Sun limit, Earth in the way) |
++| Every object named from Gaia, CatWISE, Hipparcos and JPL | Learn what is actually in a patch of sky, and which catalog knows it |
++
++**What they need from us:** plain-language labels, the loading tips, a working default (24 images), no jargon
++without an explanation.
++
++## Secondary audience: amateur astronomers and citizen scientists
++
++People with some observing experience who want to contribute, or to check something they saw.
++
++| What XARVIS shows | What they can do with it |
++|---|---|
++| NEW objects: sources in no catalog, classified as static, variable, transient, moving or single | Shortlist candidates for follow-up with their own telescope, or report them |
++| A "moving" NEW object with a fitted path | Track it: XARVIS collects every SPHEREx image along the path. Compare with known minor planets before claiming a discovery |
++| Known asteroids identified in the images (JPL SB Ident, Horizons) | Check that an asteroid was where JPL predicted, and when SPHEREx caught it |
++| Brightness against the object's own spectrum, with BRIGHTNESS CHANGE flags | Spot variable stars and flares in the infrared |
++
++**What they need from us:** reliable NEW flags (few false alarms), exportable positions and times, clear
++"this could still be a known object" caveats.
++
++## Tertiary audience: researchers who want a quick look before downloading
++
++Astronomers who will use the SPHEREx data seriously, and want to know in a minute whether a target is worth it.
++
++| What XARVIS shows | What they can do with it |
++|---|---|
++| Per-image flags at the target (TRANSIENT, OUTLIER, saturated, bad pixels) | Decide which images to trust before downloading them from IRSA |
++| Signal-to-noise per image and wavelength | See whether the target is detected at all, and in which bands |
++| Positions compared with Gaia DR3 (median offset) | Judge the astrometry for the field |
++| The images themselves, aligned north-up | Catch blends, ghosts and nearby bright stars that would contaminate photometry |
++
++**What they need from us:** the numbers behind the pictures (the summary JSON is already there; a CSV export would
++help), and honesty about display-only processing (the colour and sharpening never touch the measurements).
++
++## Who it is not for (yet)
++
++- **Precision photometry or astrometry.** XARVIS is a quick look. The pipeline's measurements are careful, but the
++  web runs use a sample of images (8 to 200) spread over the survey, not all of them.
++- **Discovery claims.** A NEW object means "not in these catalogs at these limits", not "unknown to science".
++- **Real-time alerts.** IRSA releases images up to 60 days after they are taken.
++
++## The hackathon judges
++
++For the demo, the judges are an audience of their own: they need to see, in one or two minutes, that the site uses
++real NASA data, that it works end to end, and that a person in one of the groups above would come back to it. The
++strongest demo path is a test target with visible motion (Barnard's Star), one NEW object clicked and tracked, and
++the loading card's tips while the data arrives.
++
++## What this suggests we build next
++
++1. **Export:** positions, times and flags of the target and every NEW object as CSV (researchers, citizen scientists).
++2. **Shareable links** that reopen a target and date (teachers, judges).
++3. **A guided first run:** one click on a test target from the intro screen (students, judges).
++4. **"Could this be known?" checks** for NEW objects: a link to the Minor Planet Center's checker for moving ones.
+diff --git a/Jonah_Code_File/config.py b/Jonah_Code_File/config.py
+index 6e2936f..85f1b78 100644
+--- a/Jonah_Code_File/config.py
++++ b/Jonah_Code_File/config.py
+@@ -18,6 +18,7 @@ SNAP_MAX_KS_MAG = _settings["SNAP_MAX_KS_MAG"]
+ ISOLATION_RADIUS = _settings["ISOLATION_RADIUS"]
+ ISOLATION_MAX_FRACTION = _settings["ISOLATION_MAX_FRACTION"]
+ MAX_IMAGES = _settings["MAX_IMAGES"]
++SPREAD_IMAGES = _settings.get("SPREAD_IMAGES", False)   # with MAX_IMAGES: spread over all dates (website) instead of the first ones
+ ZOOM_ONLY = _settings["ZOOM_ONLY"]
+ PRETTY_IMAGES = _settings["PRETTY_IMAGES"]
+ DISPLAY_UPSCALE = _settings["DISPLAY_UPSCALE"]
+diff --git a/Jonah_Code_File/frames.py b/Jonah_Code_File/frames.py
+index b3dceed..ad578cc 100644
+--- a/Jonah_Code_File/frames.py
++++ b/Jonah_Code_File/frames.py
+@@ -325,7 +325,8 @@ def load_all_frames(coord, images, max_images=cfg.MAX_IMAGES, on_frame=None, mov
+                 try:
+                     frame = future.result()
+                 except Exception as e:                      # one bad image shouldn't stop the whole run
+-                    failures.append(str(e).splitlines()[0] if str(e) else type(e).__name__)
++                    first = next((line.strip() for line in str(e).splitlines() if line.strip()), '')
++                    failures.append(f'{type(e).__name__}: {first}' if first else type(e).__name__)
+                     frame = None
+                 if frame is not None:
+                     frames.append(frame)
+diff --git a/Jonah_Code_File/main.py b/Jonah_Code_File/main.py
+index efe82ea..e788b9f 100644
+--- a/Jonah_Code_File/main.py
++++ b/Jonah_Code_File/main.py
+@@ -26,6 +26,30 @@ log = logging.getLogger(__name__)
+ 
+ MID_DATA_MJD = 61000.0          # ~2025-11, middle of the SPHEREx data so far: where to search for a moving star
+ 
++# Headless callers (the website: web.py) set this to a function(frame, done, total) to follow the downloads; it is
++# passed to load_all_frames(on_frame=...) when no live window is shown. None (the default): nothing is called.
++PROGRESS_HOOK = None
++
++
++def select_images(images, max_images):
++    """The images to analyse out of all that cover the target (sorted by time). No max_images: all of them.
++    Otherwise the first `max_images` in time - or, with config.SPREAD_IMAGES (the website's time-lapse), up to that
++    many spread evenly over the whole list, first and last included, so every survey visit is represented. The spread
++    picks whole EXPOSURES: the images taken at the same moment (the target on a short- and a long-wavelength
++    detector) stay together, since the display colour of each comes from the other (visual.py)."""
++    if not max_images or len(images) <= max_images:
++        return images
++    if not cfg.SPREAD_IMAGES:
++        return images[:max_images]
++    t = np.asarray(images['t_min'], dtype=float)
++    exposure = np.concatenate([[0], np.cumsum(np.diff(t) * 86400 > 5)])     # same exposure: within 5 s
++    n_exposures = int(exposure[-1]) + 1
++    for count in range(min(max_images, n_exposures), 0, -1):                  # as many exposures as fit
++        picked = np.isin(exposure, np.unique(np.round(np.linspace(0, n_exposures - 1, count)).astype(int)))
++        if picked.sum() <= max_images:
++            return images[np.flatnonzero(picked)]
++    return images[:max_images]                  # (an exposure with more images than max_images: its first ones)
++
+ 
+ def start_live_view(tracked, images, show):
+     """The window that fills in while frames download (or None): only when the plots are shown and
+@@ -40,7 +64,7 @@ def make_zooms(frames, zoom_only):
+     arrays as its zoom is cut, so only the zooms stay in memory."""
+     zooms = []
+     for frame in frames:
+-        zooms.append(zoom_original(frame, release_original=zoom_only))
++        zooms.append(zoom_original(frame, size_pix=cfg.ZOOM_SIZE_PIX, release_original=zoom_only))   # the size now, not at import
+     return zooms
+ 
+ 
+@@ -160,18 +184,19 @@ def run_fixed_target(star, settings, max_images=cfg.MAX_IMAGES, show=True, zoom_
+         if not len(images):
+             raise RuntimeError(f"No SPHEREx image covers {star['name']} yet")
+         images.sort('t_min')
+-        if max_images:
+-            images = images[:max_images]
++        images_available = len(images)
++        images = select_images(images, max_images)
+         t_mid = 0.5 * (np.array(images['t_min'], dtype=float) + np.array(images['t_max'], dtype=float))
+         images['target_ra'], images['target_dec'] = positions_at(star, t_mid)          # where it was each time
+         log.info(f"{len(images)} SPHEREx images cover {star['name']}")
+         zoom_corner = cfg.ZOOM_SIZE_PIX / 2 * cfg.PIXEL_ARCSEC * np.sqrt(2) * u.arcsec
+         tracked = {'name': star['name'], 'coord': now, 'star': star, 'catalog_sed': catalog_sed(star),
+                    'field_stars': query_catalog(now, 'fp_psc', zoom_corner)}       # for the alignment check
++        tracked['images_available'] = images_available         # before max_images (shown by the website)
+         contamination = contamination_check(star, MID_DATA_MJD, tracked['catalog_sed'])   # others in the circle
+ 
+         live = start_live_view(tracked, images, show)          # shows frames as they come in
+-        frames = load_all_frames(None, images, on_frame=live.update if live else None, moving=False)
++        frames = load_all_frames(None, images, on_frame=live.update if live else PROGRESS_HOOK, moving=False)
+         if live:
+             live.close()
+             live = None
+@@ -251,12 +276,12 @@ def run_moving(tracked, settings, max_images=cfg.MAX_IMAGES, show=True, zoom_onl
+         images = find_images(tracked, spacing_deg)             # the SPHEREx images that caught it
+         if not len(images):
+             raise RuntimeError('No SPHEREx image caught the asteroid in this window - try another window (config.json)')
+-        if max_images:
+-            images = images[:max_images]
++        tracked['images_available'] = len(images)              # before max_images (shown by the website)
++        images = select_images(images, max_images)
+         images = add_predicted_positions(images, tracked)      # its exact position, as seen from SPHEREx
+ 
+         live = start_live_view(tracked, images, show)          # shows frames as they come in
+-        frames = load_all_frames(None, images, on_frame=live.update if live else None)
++        frames = load_all_frames(None, images, on_frame=live.update if live else PROGRESS_HOOK)
+         if live:
+             live.close()                                       # all frames are in: the full analysis follows
+             live = None
+diff --git a/Jonah_Code_File/stars.py b/Jonah_Code_File/stars.py
+index 5389601..5863e85 100644
+--- a/Jonah_Code_File/stars.py
++++ b/Jonah_Code_File/stars.py
+@@ -103,7 +103,7 @@ def parse_simbad(text, name):
+ def positions_at(star, mjd):
+     """(RA, Dec) in degrees of the star at time(s) `mjd`, as seen from Earth.
+ 
+-    SIMBAD's J2000 position, moved along the star's straight-line motion through space (proper motion and
++    The catalog position (SIMBAD's, at J2000 - or at star['epoch_mjd'] if the star has one), moved along the star's straight-line motion through space (proper motion and
+     radial velocity - the latter also gives the slow change of proper motion of very nearby stars), plus the
+     annual parallax from Earth's position around the Sun. SPHEREx orbits 7000 km from Earth's centre: for
+     parallax that's < 0.00001". No aberration: SPHEREx's sky coordinates are fitted to catalog positions."""
+@@ -117,7 +117,7 @@ def positions_at(star, mjd):
+     distance = AU_PER_PARSEC / (parallax / 1000) if parallax else 1e12          # AU (unknown: effectively infinite)
+     velocity = (distance * MAS * ((star['pmra'] or 0) * east + (star['pmdec'] or 0) * north)
+                 + (star['rv'] or 0) * KM_PER_S_IN_AU_PER_YEAR * toward)         # AU per year
+-    years = (mjd - J2000_MJD) / 365.25
++    years = (mjd - (star.get('epoch_mjd') or J2000_MJD)) / 365.25      # 'epoch_mjd': the epoch of ra/dec (Gaia: J2016.0)
+     where = distance * toward[None, :] + years[:, None] * velocity[None, :]    # barycentric, AU
+     if parallax:
+         earth = get_body_barycentric('earth', Time(mjd, format='mjd'))
+diff --git a/Jonah_Code_File/web.py b/Jonah_Code_File/web.py
+new file mode 100644
+index 0000000..69a00ae
+--- /dev/null
++++ b/Jonah_Code_File/web.py
+@@ -0,0 +1,549 @@
++"""The website's way into the pipeline: analyse(request, folder, on_progress) runs one analysis with no windows and
++writes what the browser's time-lapse needs into `folder`:
++
++    summary.json        the target, and every frame's time, detector, wavelength, signal-to-noise and flags
++    frame_<n>.png       every frame (n from 1, in time order)
++
++`request` is what Test_Robert_Code_Folder/app.py makes of the analysis popup's payload (see web_request):
++    {'ra_deg', 'dec_deg', 'patch_px', 'max_images' (None: all), 'star' (None, or a Gaia DR3 star with its motion)}
++
++Every PNG is the frame's original pixels resampled onto ONE grid centred on the target, north up and east left
++(SPHEREx images come in many rotations; on one grid they line up, so the frames can be played as a time-lapse). One
++PNG pixel is one SPHEREx pixel (6.15"); the browser scales it up without smoothing, so the real pixels stay visible.
++
++Like the desktop viewer, every run of something fixed on the sky compares each frame with the catalogs (Gaia DR3,
++CatWISE2020, Hipparcos, JPL's known asteroids and comets, the planets) and maps the sky (skymap.py): every object
++is named, and what no catalog explains is flagged as a NEW object (static / variable / transient / moving /
++single). Each mapped object carries how to track it; a request with a 'track' spec runs that (main.run_track):
++a catalog star, a known asteroid (JPL Horizons path), a sky position, or a new object's fitted path.
++
++What a web run does differently from the desktop (through api.settings_override, for the duration of the run only):
++no windows, the patch size the popup asks for, the sky map for every fixed target, and - with a limit on the number
++of images - whole exposures spread over all the survey dates rather than the first ones. Runs are one at a time
++(api's lock): the settings are module-wide.
++"""
++
++import json
++import logging
++import os
++import re
++from pathlib import Path
++
++os.environ.setdefault('MPLBACKEND', 'Agg')      # the pipeline imports matplotlib.pyplot: never open a window here
++
++import numpy as np
++from astropy.time import Time
++
++from . import config as cfg
++
++log = logging.getLogger(__name__)
++
++PATCH_PX_LIMITS = (10, 400)                 # pixels per side the website may ask for (400 px = 41 arcmin)
++MAX_IMAGES_LIMIT = 2000                     # more than this is not played in a browser
++DEFAULT_MAX_IMAGES = 24
++GAIA_EPOCH_YEAR = 2016.0                    # ESA Gaia DR3 reference epoch
++
++
++def results_folder():
++    """Where web runs are kept: <results>/jobs (next to the pipeline's own results files)."""
++    from .results import results_dir
++    return results_dir() / 'jobs'
++
++
++# ----------------------------------------------------------------------------
++# The request
++# ----------------------------------------------------------------------------
++
++def _number(value, low, high, name):
++    try:
++        number = float(value)
++    except (TypeError, ValueError):
++        raise ValueError(f'{name} must be a number') from None
++    if not (low <= number <= high):                         # (also refuses NaN)
++        raise ValueError(f'{name} must be between {low} and {high}')
++    return number
++
++
++def web_request(payload):
++    """The popup's payload (static/js/analysis.js: analysisPayload, plus 'max_images') -> the few values a run needs.
++    Raises ValueError with a message for the user if something is missing or out of range. The result is also the
++    run's identity: the same request gives the same job, so finished results are reused.
++
++        target.ra_deg, target.dec_deg     where to point (geocentric J2000, degrees)
++        patch.half_width_deg              -> patch_px, pixels per side (limited to PATCH_PX_LIMITS)
++        max_images                        a number, or null / 'all' for every image
++        named_target                      with pmra/pmdec: a Gaia DR3 star, followed along its motion (epoch J2016.0)
++    Not needed by the pipeline: time (the browser uses it to pick the frame to start on), spherex (the cutouts are
++    made by IRSA from SPHEREx's own pointing), and the rest of target (derived from ra/dec)."""
++    if not isinstance(payload, dict):
++        raise ValueError('the request must be a JSON object')
++    target, patch = payload.get('target'), payload.get('patch')
++    if not isinstance(target, dict) or not isinstance(patch, dict):
++        raise ValueError('target and patch are required')
++    request = {'ra_deg': round(_number(target.get('ra_deg'), 0, 360, 'target.ra_deg'), 6),
++               'dec_deg': round(_number(target.get('dec_deg'), -90, 90, 'target.dec_deg'), 6)}
++    half_width = _number(patch.get('half_width_deg'), 1e-4, 10, 'patch.half_width_deg')
++    wanted = int(round(2 * half_width * 3600 / cfg.PIXEL_ARCSEC))
++    request['patch_px'] = int(min(max(wanted, PATCH_PX_LIMITS[0]), PATCH_PX_LIMITS[1]))
++    max_images = payload.get('max_images', DEFAULT_MAX_IMAGES)
++    if max_images in (None, 'all'):
++        request['max_images'] = None
++    else:
++        request['max_images'] = int(_number(max_images, 1, MAX_IMAGES_LIMIT, 'max_images'))
++    request['star'] = None
++    if payload.get('track') is not None:                  # an object picked in the images: track it instead
++        request['track'] = track_request(payload['track'])
++        return request
++    named = payload.get('named_target')
++    if isinstance(named, dict) and named.get('pmra_mas_yr') is not None and named.get('pmdec_mas_yr') is not None:
++        parallax = named.get('parallax_mas')
++        request['star'] = {
++            'name': str(named.get('name') or 'target')[:80],
++            'gaia_dr3': str(named['gaia_dr3'])[:40] if named.get('gaia_dr3') else None,
++            'ra': _number(named.get('ra_deg_at_epoch'), 0, 360, 'named_target.ra_deg_at_epoch'),
++            'dec': _number(named.get('dec_deg_at_epoch'), -90, 90, 'named_target.dec_deg_at_epoch'),
++            'epoch': _number(named.get('epoch') or GAIA_EPOCH_YEAR, 1900, 2100, 'named_target.epoch'),
++            'pmra': _number(named['pmra_mas_yr'], -30000, 30000, 'named_target.pmra_mas_yr'),
++            'pmdec': _number(named['pmdec_mas_yr'], -30000, 30000, 'named_target.pmdec_mas_yr'),
++            'parallax': None if parallax is None else _number(parallax, -100, 2000, 'named_target.parallax_mas'),
++        }
++    return request
++
++
++DATE = re.compile(r'\d{4}-\d{2}-\d{2}')
++
++
++def _text(value, name, limit=80):
++    if not isinstance(value, (str, int, float)) or not str(value).strip():
++        raise ValueError(f'{name} is missing')
++    return str(value).strip()[:limit]
++
++
++def track_request(spec):
++    """A mapped object's track spec (as the summary gave it to the browser: plots.track_spec) checked and reduced to
++    plain values - the browser sends it back to track that object. ValueError if it is not one."""
++    if not isinstance(spec, dict):
++        raise ValueError('track must be an object')
++    kind, name = spec.get('kind'), _text(spec.get('name', 'object'), 'track.name')
++    if kind == 'star':
++        star = spec.get('star')
++        if not isinstance(star, dict):
++            raise ValueError('track.star is missing')
++        parallax = star.get('parallax')
++        return {'kind': 'star', 'name': name, 'star': {
++            'name': _text(star.get('name', name), 'track.star.name'),
++            'object_type': _text(star.get('object_type', 'catalog star'), 'track.star.object_type'),
++            'query': _text(star.get('query', name), 'track.star.query'),
++            'ra': _number(star.get('ra'), 0, 360, 'track.star.ra'), 'dec': _number(star.get('dec'), -90, 90, 'track.star.dec'),
++            'pmra': _number(star.get('pmra') or 0, -30000, 30000, 'track.star.pmra'),
++            'pmdec': _number(star.get('pmdec') or 0, -30000, 30000, 'track.star.pmdec'),
++            'parallax': None if parallax is None else _number(parallax, -100, 2000, 'track.star.parallax')}}
++    if kind == 'asteroid':
++        window = spec.get('window')
++        if not (isinstance(window, (list, tuple)) and len(window) == 2 and all(DATE.fullmatch(str(w)) for w in window)):
++            raise ValueError('track.window must be two dates (YYYY-MM-DD)')
++        return {'kind': 'asteroid', 'name': name, 'id': _text(spec.get('id'), 'track.id', 40),
++                'window': [str(w) for w in window]}
++    if kind == 'coords':
++        coords = spec.get('coords')
++        if not (isinstance(coords, (list, tuple)) and len(coords) == 2):
++            raise ValueError('track.coords must be [ra, dec]')
++        return {'kind': 'coords', 'name': name,
++                'coords': [_number(coords[0], 0, 360, 'track.coords'), _number(coords[1], -90, 90, 'track.coords')]}
++    if kind == 'path':
++        mjd, ra, dec = (spec.get(k) for k in ('mjd', 'ra', 'dec'))
++        if not all(isinstance(v, (list, tuple)) for v in (mjd, ra, dec)) or not (2 <= len(mjd) == len(ra) == len(dec) <= 500):
++            raise ValueError('track.mjd / ra / dec must be lists of the same length (2 to 500)')
++        return {'kind': 'path', 'name': name, 'mjd': [_number(v, 60000, 70000, 'track.mjd') for v in mjd],
++                'ra': [_number(v, 0, 360, 'track.ra') for v in ra], 'dec': [_number(v, -90, 90, 'track.dec') for v in dec]}
++    raise ValueError("track.kind must be 'star', 'asteroid', 'coords' or 'path'")
++
++
++def pipeline_star(request):
++    """The request's target as the pipeline's `star` (see stars.positions_at). A Gaia star carries the epoch of
++    its position ('epoch_mjd'), so it is moved from there - not from J2000, the epoch SIMBAD positions have."""
++    star = request.get('star')
++    if star:
++        return {'name': star['name'], 'object_type': 'Gaia DR3 star', 'query': star.get('gaia_dr3') or star['name'],
++                'ra': star['ra'], 'dec': star['dec'], 'pmra': star['pmra'], 'pmdec': star['pmdec'],
++                'parallax': star['parallax'], 'rv': None, 'magnitudes': {}, 'spectral_type': '?',
++                'epoch_mjd': float(Time(star['epoch'], format='jyear').mjd)}
++    ra, dec = request['ra_deg'], request['dec_deg']
++    return {'name': f'RA {ra:.5f} Dec {dec:+.5f}', 'object_type': 'sky position', 'query': f'{ra} {dec}',
++            'ra': ra, 'dec': dec, 'pmra': 0.0, 'pmdec': 0.0, 'parallax': None, 'rv': None, 'magnitudes': {},
++            'spectral_type': '?'}
++
++
++def zoom_px(patch_px):
++    """Pixels per side the pipeline must keep of every frame so that the north-up patch is filled whatever the
++    frame's rotation: the patch's diagonal (a frame rotated 45 degrees), plus a margin for the resampling."""
++    return int(np.ceil(patch_px * np.sqrt(2))) + 4
++
++
++def run_settings(request):
++    """config.json values for this web run only (see the module docstring)."""
++    zoom = zoom_px(request['patch_px'])
++    cutout_arcmin = max(cfg.CUTOUT_SIZE.to_value('arcmin'), (zoom + 4) * cfg.PIXEL_ARCSEC / 60)
++    # the catalogs (Gaia DR3, CatWISE) must cover everything the sky map looks at - the whole zoom, to its corners;
++    # a star beyond FIELD_RADIUS has no catalog entry and would be flagged NEW
++    field_arcmin = max(cfg.FIELD_RADIUS.to_value('arcmin'), zoom / 2 * np.sqrt(2) * cfg.PIXEL_ARCSEC / 60 + 0.5)
++    return {'ZOOM_SIZE_PIX': zoom, 'CUTOUT_SIZE': cutout_arcmin, 'FIELD_RADIUS': field_arcmin, 'SPREAD_IMAGES': True, 'FIELD_CHECK': True,
++            'SKYMAP_FOR_ALL_TARGETS': True, 'LIVE_VIEW': False, 'ZOOM_ONLY': True,
++            'SAVE_RESULTS': False,
++            'MEASURE_WORKERS': 0}      # measure in the server process: no worker processes started from a web server      # (the desktop's results list is for desktop runs; this run is kept as summary.json)
++
++
++# ----------------------------------------------------------------------------
++# Images
++# ----------------------------------------------------------------------------
++
++def north_up_grid(size_pix):
++    """(east, north) offsets from the target in arcsec for a size_pix x size_pix image: row 0 is the north edge,
++    column 0 the east edge (north up, east left, like the popup's patch map)."""
++    offsets = (np.arange(size_pix) - (size_pix - 1) / 2) * cfg.PIXEL_ARCSEC
++    north, east = np.meshgrid(-offsets, -offsets, indexing='ij')
++    return east, north
++
++
++def resampled(zoom, size_pix):
++    """The zoom's pixels on the north-up grid (sky level removed, bad / missing pixels NaN)."""
++    from .spectrumanalyser import sample_frame
++    east, north = north_up_grid(size_pix)
++    return sample_frame(zoom, east, north)[0]
++
++
++def flags_in_aperture(zoom):
++    """Names of the SPHEREx pixel flags set inside the measuring circle around the target."""
++    header, flags = zoom.get('flags_header'), zoom.get('flags')
++    if header is None or flags is None:
++        return []
++    x, y = zoom['catalog_xy']
++    yy, xx = np.indices(flags.shape)
++    inside = np.hypot(xx - x, yy - y) <= cfg.APERTURE_RADIUS_PIX
++    if not inside.any():
++        return []
++    present = int(np.bitwise_or.reduce(np.asarray(flags)[inside].astype(np.int64)))
++    return sorted({str(header[key]) for key in header['MSKN*'] if present & (1 << int(key[4:]))})
++
++
++def north_up_zoom(zoom, size_pix):
++    """The zoom resampled onto the north-up grid, as a zoom of its own (pixels + a north-up TAN WCS centred where
++    the grid is), so the backend's display code (visual.render) and sky positions work on it unchanged."""
++    from astropy.wcs import WCS
++    ra0, dec0 = (float(v) for v in zoom['wcs'].pixel_to_world_values(*zoom['catalog_xy']))   # the grid's centre
++    wcs = WCS(naxis=2)
++    wcs.wcs.ctype = ['RA---TAN', 'DEC--TAN']
++    wcs.wcs.crval = [ra0, dec0]
++    wcs.wcs.crpix = [(size_pix + 1) / 2, (size_pix + 1) / 2]        # FITS counts from 1: the middle pixel
++    wcs.wcs.cdelt = [-cfg.PIXEL_ARCSEC / 3600, cfg.PIXEL_ARCSEC / 3600]   # east left, north up
++    keep = ('mjd', 'detector', 'wavelength_um', 'object_found', 'object_ra', 'object_dec', 'expected_ra',
++            'expected_dec')
++    return {**{key: zoom[key] for key in keep if key in zoom},
++            'image': resampled(zoom, size_pix)[::-1],              # rows from south to north, like a FITS image
++            'wcs': wcs}
++
++
++def reference_position(movement, index):
++    """The blue dashed circle of the desktop viewer: movement['reference'] (the object at T1 for a star), or None."""
++    reference = (movement or {}).get('reference')
++    if reference is None:
++        return None
++    reference = reference[index] if getattr(reference, 'shape', ()) else reference
++    return float(reference.ra.deg), float(reference.dec.deg)
++
++
++def png_xy(north, factor, ra, dec):
++    """Sky positions -> pixel positions in the PNG (x right, y DOWN, in PNG pixels) and whether each is inside."""
++    ny, nx = north['image'].shape
++    x, y = (np.atleast_1d(np.asarray(v, dtype=float)) for v in north['wcs'].world_to_pixel_values(ra, dec))
++    inside = (x >= -0.5) & (x < nx - 0.5) & (y >= -0.5) & (y < ny - 0.5)
++    return (x + 0.5) * factor, (ny - (y + 0.5)) * factor, inside
++
++
++def target_marks(zoom, north, factor, blue):
++    """The desktop viewer's circles for the analysed object, in PNG pixels: red = where it was found in this frame,
++    blue dashed = the reference position (movement['reference'], drawn only inside the image). Radii in PNG pixels."""
++    marks = {'red': None, 'blue': None, 'radius': cfg.APERTURE_RADIUS_PIX * factor,
++             'blue_radius': (cfg.APERTURE_RADIUS_PIX + 0.6) * factor}
++    red = (zoom.get('object_ra'), zoom.get('object_dec'))
++    if all(v is not None and np.isfinite(v) for v in red):
++        x, y, _ = png_xy(north, factor, *red)
++        marks['red'] = [round(float(x[0]), 1), round(float(y[0]), 1)]
++    if blue is not None:
++        x, y, inside = png_xy(north, factor, *blue)
++        if inside[0]:
++            marks['blue'] = [round(float(x[0]), 1), round(float(y[0]), 1)]
++    return marks
++
++
++def object_id(entry):
++    """One mapped object's id, the same in every frame (plots._object_key: catalog row, JPL designation, NEW id)."""
++    kind = entry['kind']
++    key = {'star': entry.get('catalog_row'), 'small body': entry.get('body'), 'new': entry.get('new_id')}.get(kind)
++    return f"{kind}:{entry['label'] if key is None else key}"
++
++
++MAP_COUNTS = (('Hipparcos', 'Hipparcos'), ('Gaia', 'Gaia DR3 (+)'), ('CatWISE', 'CatWISE (x)'),
++              ('small body', 'known asteroid/comet'), ('planet', 'planet'), ('artifact', 'flagged artifact'),
++              ('new', 'NEW (yellow)'))
++
++
++def map_marks(zoom, north, factor):
++    """The sky map of one frame (frame['map'], skymap.map_frames) in PNG pixels, plus the desktop viewer's summary
++    line for it ('mapped: 3 Hipparcos, 41 Gaia DR3 (+) ...'). None, None if the frame has no sky map."""
++    entries = zoom.get('map')
++    if entries is None:
++        return None, None
++    marks, counts = [], {}
++    if entries:
++        xs, ys, inside = png_xy(north, factor, [e['ra'] for e in entries], [e['dec'] for e in entries])
++        for x, y, ok, entry in zip(xs, ys, inside, entries):
++            if not ok:
++                continue
++            key = entry.get('source', 'Gaia') if entry['kind'] == 'star' else entry['kind']
++            counts[key] = counts.get(key, 0) + 1
++            marks.append({'id': object_id(entry), 'kind': entry['kind'], 'source': entry.get('source'),
++                          'label': entry['label'], 'named': bool(entry.get('named')),
++                          'detected': bool(entry.get('detected', True)), 'x': round(float(x), 1), 'y': round(float(y), 1)})
++    parts = [f'{counts[key]} {label}' for key, label in MAP_COUNTS if counts.get(key)]
++    return marks, 'mapped: ' + (', '.join(parts) or 'nothing detected')
++
++
++def write_frames(zooms, folder, size_pix, movement=None):
++    """frame_<n>.png for every zoom: the desktop viewer's pretty image (visual.render - colour from the simultaneous
++    frame on the other detector arm, sharpened and upscaled DISPLAY_UPSCALE times, the target drawn at the same
++    brightness and in the same colour in every frame), on the north-up grid so the frames line up. Returns one dict
++    per frame with what the browser draws on top, in PNG pixels: the red / blue circles ('marks') and the sky map
++    ('objects', 'map_text') - drawn there, not into the PNG, so they can be clicked and switched off."""
++    from PIL import Image
++    from .visual import anchor_colour, find_partners, render, target_xy
++    factor = int(cfg.DISPLAY_UPSCALE)
++    north = [north_up_zoom(zoom, size_pix) for zoom in zooms]
++    partners = find_partners(north)
++    colour = anchor_colour(north, partners)
++    shown = []
++    for i, (zoom, flat) in enumerate(zip(zooms, north)):
++        partner = north[partners[i]] if partners[i] is not None else None
++        rgb, _ = render(flat, partner, factor=factor, anchor={'xy': target_xy(flat), 'colour': colour})
++        rgb = (np.clip(np.flipud(rgb), 0, 1) * 255).astype(np.uint8)     # PNG rows run top to bottom
++        Image.fromarray(rgb).save(Path(folder) / f'frame_{i + 1}.png')
++        wavelengths = sorted([zoom['wavelength_um'], partner['wavelength_um']]) if partner is not None else None
++        objects, map_text = map_marks(zoom, flat, factor)
++        shown.append({'png': f'frame_{i + 1}.png', 'flags_in_aperture': flags_in_aperture(zoom),
++                      'colour_um': wavelengths,                        # [short, long]: what the colours compare
++                      'marks': target_marks(zoom, flat, factor, reference_position(movement, i)),
++                      'objects': objects, 'map_text': map_text})
++    return shown
++
++
++# ----------------------------------------------------------------------------
++# Running
++# ----------------------------------------------------------------------------
++
++FRAME_FIELDS = ('obs_id', 'mjd', 'detector', 'wavelength_um', 'flux_mjy', 'flux_err_mjy', 'snr',
++                'n_bad_in_aperture', 'saturated', 'track', 'astrometry_ok',
++                'expected_ra', 'expected_dec')          # where the target was in that image (the patch centre)
++
++
++def frame_title(frames, index, movement, brightness):
++    """The desktop viewer's title for frame T(index+1) (plots.draw_zoom), as three lines:
++    'T5 of 21   2025-11-03 12:10   +186.81 d   detector 4', the wavelength and how far it moved since T1, and
++    its brightness (flux, and against its own spectrum) - with the same flags (MOVED, BRIGHTNESS CHANGE ...)."""
++    from .plots import fmt_angle
++    movement, brightness = movement or {}, brightness or {}
++    frame = frames[index]
++
++    def at(result, key, default=np.nan):
++        values = result.get(key)
++        return values[index] if values is not None and len(values) > index else default
++
++    days = frame['mjd'] - frames[0]['mjd']
++    n_bad = frame.get('n_bad_in_aperture') or 0
++    flag_label = movement.get('flag_label', 'MOVED')
++    moved, changed = bool(at(movement, 'flagged', False)), bool(at(brightness, 'flagged', False))
++    unreliable = f'   [{n_bad} bad pixel(s) in circle: not used]' if n_bad and not frame.get('saturated') else ''
++    offset = at(movement, 'offset_arcsec')
++    travelled = f'moved {fmt_angle(offset)}' if np.isfinite(offset) else 'movement: not measured'
++    if 'notes' in movement:                         # an asteroid: signal-to-noise and distance from its ephemeris
++        third = movement['notes'][index]
++    else:                                           # a star or a sky position: brightness against its own spectrum
++        deviation = at(brightness, 'deviation')
++        versus = f'{deviation * 100:+.1f}%' if np.isfinite(deviation) else 'n/a (too few similar-wavelength frames)'
++        third = f"vs spectrum {versus}{'  << BRIGHTNESS CHANGE' if changed else ''}"
++    if frame.get('saturated'):
++        deviation = at(brightness, 'deviation') if brightness.get('source') == 'glow' else np.nan
++        third_line = ('SATURATED: position from its outer glow, ' +
++                      (f'glow vs spectrum {deviation * 100:+.1f}%{"  << BRIGHTNESS CHANGE" if changed else ""}'
++                       if np.isfinite(deviation) else 'brightness not measurable'))
++    else:
++        third_line = f"flux {frame['flux_mjy']:.2f} ± {frame['flux_err_mjy']:.2f} mJy   {third}"
++    date = str(frame.get('date_obs') or Time(frame['mjd'], format='mjd').utc.isot)[:16].replace('T', ' ')
++    return [f"T{index + 1} of {len(frames)}   {date}   +{days:.2f} d   detector {frame['detector']}{unreliable}",
++            f"λ = {frame['wavelength_um']:.3f} µm   {travelled}{f'  << {flag_label}' if moved else ''}",
++            third_line]
++
++
++def mapped_objects(results, shown):
++    """Every object the sky map found INSIDE the images shown (shown = write_frames' output; the sky map also covers
++    the margin cut for rotated frames): {id: {label, kind, source, info, frames (T numbers), detected_in,
++    track (how to track it: plots.track_spec) or reason (why it can't be)}}."""
++    from .api import jsonable
++    from .plots import track_spec
++    tracked, objects = results['tracked'], {}
++    for n, (zoom, frame) in enumerate(zip(results['zooms'], shown), start=1):
++        inside = {o['id'] for o in frame.get('objects') or []}
++        for entry in zoom.get('map') or []:
++            oid = object_id(entry)
++            if oid not in inside:
++                continue
++            obj = objects.get(oid)
++            if obj is None:
++                try:
++                    spec = jsonable(track_spec(entry, tracked, zoom['mjd']))
++                except Exception as e:                      # (never stops the summary)
++                    spec = {'kind': 'none', 'reason': f'cannot be tracked ({type(e).__name__})'}
++                obj = objects[oid] = {
++                    'label': entry['label'], 'kind': entry['kind'], 'source': entry.get('source'),
++                    'info': entry.get('info'), 'named': bool(entry.get('named')), 'frames': [], 'detected_in': [],
++                    'track': spec if spec and spec.get('kind') != 'none' else None,
++                    'reason': spec.get('reason') if spec and spec.get('kind') == 'none' else None}
++            obj['frames'].append(n)
++            if entry.get('detected', True):
++                obj['detected_in'].append(n)
++    return objects
++
++
++def database_comparison(results, log_lines, objects=None):
++    """What the frames were compared with, and what came of it (the desktop's field check and sky map). With
++    `objects` (mapped_objects), the NEW objects and known asteroids are the ones inside the images shown; the
++    number of NEW objects found only in the margin around them is 'new_outside'."""
++    from .api import jsonable
++    from astropy.time import Time as _Time
++    sky, field, table = results.get('skymap'), results.get('field'), results['tracked'].get('field')
++    out = {'sky_map': sky is not None, 'field_check': field is not None}
++    skipped = [' '.join(str(line).split()).strip('()') for line in log_lines
++               if ('skipped' in line and ('Sky map' in line or 'Field' in line)) or 'not available' in line]
++    if skipped:                                         # (the reason, without the network library's details)
++        out['notes'] = [re.sub(r'\s*\((HTTPSConnectionPool|Max retries).*$', ')', note)[:200] for note in skipped]
++    if field is not None:
++        offsets = np.asarray(field.get('offset_px', []), dtype=float).reshape(-1, 2)
++        out['pointing'] = {'matches': int(len(offsets)),
++                           'median_offset_arcsec': jsonable(float(np.median(np.hypot(*offsets.T))) * cfg.PIXEL_ARCSEC)
++                           if len(offsets) else None}
++    catalog = sky['catalog'] if sky is not None else table
++    if catalog is not None and len(catalog):
++        sources = np.asarray(catalog['source']).astype(str)
++        out['catalog_stars'] = {name: int(np.sum(sources == name)) for name in ('Gaia', 'CatWISE') if np.any(sources == name)}
++        if 'hip' in catalog.colnames:
++            out['catalog_stars']['Hipparcos'] = int(np.sum(np.asarray(catalog['hip']) > 0))
++    if sky is not None:
++        shown = (lambda oid: True) if objects is None else (lambda oid: oid in objects)
++        out['known_small_bodies'] = [{'name': b['fullname'], 'kind': b['kind'], 'orbit_class': b['orbit_class'],
++                                      'frames': sorted(int(i) + 1 for i in b['positions'])} for b in sky['bodies']
++                                     if shown(f"small body:{b.get('des')}") or 'des' not in b]
++        out['planets'] = sorted(p.capitalize() for p in sky['planets'])
++        out['new_objects'] = [{
++            'id': o['id'], 'class': o['kind'], 'description': o.get('description'),
++            'ra_deg': jsonable(o['ra']), 'dec_deg': jsonable(o['dec']), 'n_detections': len(o['detections']),
++            'first_seen_utc': _Time(min(m['mjd'] for m in o['detections']), format='mjd').utc.strftime('%Y-%m-%d %H:%M'),
++            'object': f"new:{o['id']}"} for o in sky['new_objects'] if shown(f"new:{o['id']}")]
++        out['new_outside'] = len(sky['new_objects']) - len(out['new_objects'])
++    return out
++
++
++def summary_of(results, request, shown, log_lines=()):
++    """The JSON the browser gets when the run is done (also saved as summary.json)."""
++    from .api import jsonable
++    tracked, frames = results['tracked'], results['frames']
++    movement, brightness = results.get('movement'), results.get('brightness')
++    objects = mapped_objects(results, shown)
++    rows = []
++    for n, (frame, extra) in enumerate(zip(frames, shown), start=1):
++        row = {'n': n, 'name': f'T{n}', 'title': frame_title(frames, n - 1, movement, brightness),
++               'time_utc': Time(frame['mjd'], format='mjd').utc.strftime('%Y-%m-%d %H:%M:%S')}
++        row.update({key: jsonable(frame.get(key)) for key in FRAME_FIELDS})
++        row.update(extra)
++        rows.append(row)
++    return {'target': {'name': tracked.get('name'), 'ra_deg': request['ra_deg'], 'dec_deg': request['dec_deg'],
++                       'moving': 'ephemeris' in tracked,
++                       'gaia_dr3': (request.get('star') or {}).get('gaia_dr3')},
++            'request': request,
++            'patch_px': request['patch_px'], 'pixel_arcsec': cfg.PIXEL_ARCSEC,
++            'images_available': jsonable(tracked.get('images_available')), 'n_frames': len(rows),
++            'frames': rows,
++            'image_px': request['patch_px'] * int(cfg.DISPLAY_UPSCALE),
++            'objects': objects,
++            'database': database_comparison(results, log_lines, objects),
++            'tracking': (request.get('track') or {}).get('name'),
++            'circles': {'red': 'object found in this frame',
++                        'blue': (movement or {}).get('reference_label', 'object at T1')},
++            'source': 'NASA/IPAC IRSA SPHEREx spectral images (' + ', '.join(cfg.COLLECTIONS) + ')'}
++
++
++REJECTION_NOTES = ('skipped', 'too close to the edge', 'could not be fitted')
++
++
++def explained(error, log_lines):
++    """The pipeline's error, with the reasons it logged for rejecting images (otherwise only in the server's
++    terminal) - e.g. 'None of the images could be measured at this position' says nothing about why."""
++    notes = [' '.join(line.split()) for line in log_lines if any(key in line for key in REJECTION_NOTES)]
++    message = str(error).strip().rstrip('.')
++    return message + ('. ' + ' '.join(dict.fromkeys(notes)) if notes else '.')
++
++
++def run(request, pipeline):
++    """The pipeline run for one web request: the request's target (fixed, or a Gaia star moving at its proper
++    motion), or - with a 'track' spec - the object picked in an earlier run's images (main.run_track's choices)."""
++    spec, n = request.get('track'), request['max_images']
++    if spec is None:
++        return pipeline.run_fixed_target(pipeline_star(request), {'mode': 'web'}, n, show=False)
++    if spec['kind'] == 'star':                      # a catalog star (J2000 position, motion, parallax)
++        star = {**spec['star'], 'rv': None, 'magnitudes': {}, 'spectral_type': '?'}
++        return pipeline.run_fixed_target(star, {'mode': 'catalog star'}, n, show=False)
++    if spec['kind'] == 'coords':
++        ra, dec = spec['coords']
++        return pipeline.run_fixed_target(pipeline_star({'ra_deg': ra, 'dec_deg': dec, 'star': None}),
++                                         {'mode': 'web'}, n, show=False)
++    if spec['kind'] == 'asteroid':                  # JPL Horizons path, as seen from SPHEREx
++        return pipeline.run_asteroid(spec['id'], tuple(spec['window']), n, show=False)
++    return pipeline.run_path(spec['name'], spec['mjd'], spec['ra'], spec['dec'], n, show=False)   # a NEW mover
++
++
++def analyse(request, folder, on_progress=None):
++    """Run the pipeline for one web request and write summary.json + frame_<n>.png into `folder`.
++    on_progress(done, total, message): called while the images download (done and total are 0 until the number
++    of images is known). Returns the summary. Raises RuntimeError / ValueError with a message for the user."""
++    from . import main as pipeline
++    from .api import _run_lock, progress_events, settings_override
++    folder = Path(folder)
++    folder.mkdir(parents=True, exist_ok=True)
++    report = on_progress or (lambda done, total, message: None)
++    log_lines = []                                  # the pipeline's own messages: they say why images were rejected
++
++    state = {'done': 0, 'total': 0, 'loading': True}
++
++    def hook(frame, done, total):
++        state.update(done=done, total=total, loading=done < total)
++        report(done, total, f'Downloading and measuring SPHEREx images: {done} of {total}')
++
++    def message(line):                              # after the downloads: the pipeline's own steps as progress
++        log_lines.append(line)
++        text = ' '.join(str(line).split())
++        if text and not state['loading'] and state['total']:
++            report(state['done'], state['total'], text[:160])
++
++    with _run_lock, settings_override(run_settings(request)), progress_events(message):
++        report(0, 0, 'Searching the SPHEREx archive at NASA/IPAC IRSA...')
++        pipeline.PROGRESS_HOOK = hook
++        try:
++            results = run(request, pipeline)
++        except RuntimeError as e:
++            raise RuntimeError(explained(e, log_lines)) from e
++        finally:
++            pipeline.PROGRESS_HOOK = None
++        n = len(results['frames'])
++        report(n, n, 'Making the images...')
++        shown = write_frames(results['zooms'], folder, request['patch_px'], results.get('movement'))
++        summary = summary_of(results, request, shown, log_lines)
++    (folder / 'summary.json').write_text(json.dumps(summary), encoding='utf-8')
++    return summary
+diff --git a/README.md b/README.md
+index 3b07346..5ef46c9 100644
+--- a/README.md
++++ b/README.md
+@@ -3,4 +3,32 @@
+ This is a test commit
+ 
+ Nick was here
+-m
+\ No newline at end of file
++m
++
++Who it is for, and what each group can do with what it shows: [AUDIENCE.md](AUDIENCE.md).
++
++## Run the website (viewer + SPHEREx image time-lapse)
++
++From this folder, with the virtual environment active (`.venv\Scripts\Activate.ps1`) and `pip install -r requirements.txt` done:
++
++```
++python run_web.py
++```
++
++Then open http://127.0.0.1:5000. Double-click the sky (or use "Go to sky coordinates"): when SPHEREx can see the point on the date shown, the popup loads the SPHEREx images of that patch from NASA/IPAC IRSA and plays them.
++
++- Website: `Test_Robert_Code_Folder/` (`app.py`, `analysis_jobs.py`, `templates/`, `static/`)
++- Pipeline: `Jonah_Code_File/` (`web.py` is the website's entry point; desktop app: `python -m Jonah_Code_File`)
++- Settings: `config.json`
++- Web results: `results/jobs/<job>/` (`summary.json`, `frame_<n>.png`)
++
++Tests:
++
++```
++python -m unittest Jonah_Code_File.test_algorithm
++python -m unittest discover -s Jonah_Code_File -t . -p "test_*.py"
++python -m unittest test_web_integration
++python Test_Robert_Code_Folder/tools/verify_motion.py
++```
++
++`$env:XARVIS_ONLINE=1; python -m unittest test_web_integration` also runs one real analysis against IRSA.
+diff --git a/Test_Robert_Code_Folder/analysis_jobs.py b/Test_Robert_Code_Folder/analysis_jobs.py
+new file mode 100644
+index 0000000..83d3662
+--- /dev/null
++++ b/Test_Robert_Code_Folder/analysis_jobs.py
+@@ -0,0 +1,143 @@
++"""Background jobs for the SPHEREx image time-lapse (the bridge between this website and Jonah_Code_File).
++
++A run takes seconds to minutes (IRSA downloads), far longer than one web request should, so it runs on a worker thread
++and the browser polls for progress. ONE worker: the pipeline's settings are module-wide, so runs go one at a time.
++Each job writes into <results>/jobs/<id>/ (summary.json + frame_<n>.png); the id is a hash of the request, so the
++same request finds its finished results again - also after a server restart.
++
++    submit(request)  -> job id                 (starts the run, or reuses a queued / running / finished one)
++    status(job_id)   -> dict, or None           {'status': queued|running|done|error, 'done', 'total', 'message',
++                                                 'summary' (when done), 'error' (when failed)}
++    folder(job_id)   -> where its files are
++
++The pipeline is imported on first use, in the worker - the viewer itself starts without it (and still works if the
++pipeline's packages are missing: the popup then shows the error).
++"""
++import hashlib
++import json
++import os
++import sys
++import threading
++import traceback
++from concurrent.futures import ThreadPoolExecutor
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent              # the Xarvis folder: Jonah_Code_File is imported from here
++os.environ.setdefault("MPLBACKEND", "Agg")                # before anything imports matplotlib: never open a window
++
++_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="spherex-analysis")
++_jobs = {}
++_lock = threading.Lock()
++
++
++def pipeline():
++    """The pipeline's web module (Jonah_Code_File.web), wherever the server was started from."""
++    if str(ROOT) not in sys.path:
++        sys.path.insert(0, str(ROOT))
++    from Jonah_Code_File import web
++    return web
++
++
++def job_id(request):
++    return hashlib.sha1(json.dumps(request, sort_keys=True).encode()).hexdigest()[:16]
++
++
++def folder(jid):
++    return pipeline().results_folder() / jid
++
++
++def _saved_summary(jid):
++    try:
++        return json.loads((folder(jid) / "summary.json").read_text(encoding="utf-8"))
++    except (OSError, ValueError):
++        return None
++
++
++def status(jid):
++    with _lock:
++        job = dict(_jobs[jid]) if jid in _jobs else None
++    if job is None or job["status"] == "done":
++        summary = _saved_summary(jid)
++        if summary is None:
++            return None if job is None else {**job, "status": "error", "error": "The saved results are missing."}
++        job = {**(job or {"done": summary["n_frames"], "total": summary["n_frames"], "message": "Saved results"}),
++               "status": "done", "summary": summary}
++    return job
++
++
++def finished():
++    """Every finished analysis (newest first), as the viewer draws it on the sky: where it is, what it was, which
++    SPHEREx images it holds and the request that made it (to open it again). A tracked object that moves (an asteroid,
++    a NEW mover) has the path its images followed; anything else one centre."""
++    try:
++        folders = [f for f in pipeline().results_folder().iterdir() if JOB_FOLDER(f.name)]
++    except OSError:
++        return []
++    out = []
++    for path in folders:
++        try:
++            summary = json.loads((path / "summary.json").read_text(encoding="utf-8"))
++            frames, request, target = summary["frames"], summary["request"], summary["target"]
++            points = [[f["expected_ra"], f["expected_dec"]] for f in frames
++                      if f.get("expected_ra") is not None and f.get("expected_dec") is not None]
++            if not points:                                  # (saved before positions were kept: the patch centre)
++                points = [[target["ra_deg"], target["dec_deg"]]]
++            moving = bool(target.get("moving"))
++            ra, dec = points[len(points) // 2] if moving else points[0]
++            database = summary.get("database") or {}
++            out.append({
++                "job": path.name, "name": target.get("name") or "analysis", "tracking": summary.get("tracking"),
++                "moving": moving, "ra_deg": ra, "dec_deg": dec, "path": points if moving else None,
++                "patch_px": summary["patch_px"], "pixel_arcsec": summary["pixel_arcsec"],
++                "n_frames": summary["n_frames"], "images_available": summary.get("images_available"),
++                "first_utc": frames[0]["time_utc"] if frames else None, "last_utc": frames[-1]["time_utc"] if frames else None,
++                "new_objects": len(database.get("new_objects") or []), "request": request,
++                "saved": (path / "summary.json").stat().st_mtime})
++        except (OSError, ValueError, KeyError, TypeError, IndexError):
++            continue                                        # an unreadable folder is skipped, not fatal
++    return sorted(out, key=lambda a: -a["saved"])
++
++
++def JOB_FOLDER(name):
++    return len(name) == 16 and all(c in "0123456789abcdef" for c in name)
++
++
++def friendly(error):
++    """One sentence for the popup from whatever stopped the run."""
++    text = " ".join(str(error).split())[:600] or type(error).__name__
++    if isinstance(error, ImportError):
++        return f"The analysis pipeline could not be loaded on the server ({text}). Check that requirements.txt is installed."
++    if "attempts failed" in text or "HTTP 5" in text or "unreachable" in text:
++        return f"NASA/IPAC IRSA did not answer ({text}). The archive is often briefly overloaded: try again in a minute."
++    return text
++
++
++def submit(request, run=None):
++    """Start the job for `request` (see Jonah_Code_File.web.web_request) unless it is already queued, running or
++    finished. run(request, folder, on_progress): the work - the pipeline's analyse by default (tests pass a stand-in)."""
++    jid = job_id(request)
++    with _lock:
++        known = _jobs.get(jid)
++        if known and known["status"] in ("queued", "running"):
++            return jid
++        if _saved_summary(jid) is not None:
++            return jid
++        _jobs[jid] = {"status": "queued", "done": 0, "total": 0, "message": "Waiting for another analysis to finish..."}
++
++    def progress(done, total, message):
++        with _lock:
++            _jobs[jid].update(status="running", done=int(done), total=int(total), message=str(message))
++
++    def work():
++        progress(0, 0, "Starting...")
++        try:
++            (run or pipeline().analyse)(request, folder(jid), progress)
++            with _lock:
++                _jobs[jid].update(status="done", message="Done")
++        except BaseException as e:                         # every failure reaches the browser as a message
++            traceback.print_exc()
++            with _lock:
++                _jobs[jid].update(status="error", error=friendly(e))
++
++    _pool.submit(work)
++    return jid
+diff --git a/Test_Robert_Code_Folder/app.py b/Test_Robert_Code_Folder/app.py
+index a930045..5fe64bb 100644
+--- a/Test_Robert_Code_Folder/app.py
++++ b/Test_Robert_Code_Folder/app.py
+@@ -28,6 +28,10 @@ API
+     /api/spherex?jd=                SPHEREx orbit at one instant, plus its real track for the hour either side (Horizons)
+     /api/sbdb/lookup?q=             one asteroid or comet by name or number, with today's osculating elements
+     /api/sbident?ra=&dec=&jd=&hw=   known asteroids and comets inside a box of sky at a given time
++    POST /api/analysis              start the SPHEREx image time-lapse of a patch (body: the popup's payload) -> 202 {job}
++    /api/analysis/<job>             its progress {status, done, total, message}; with the summary when done
++    /api/analysis/<job>/<name>.png  one of its images (frame_1.png ...)
++    /api/analyses                   every finished analysis, drawn on the sky by the viewer
+ """
+ import datetime as dt
+ import math
+@@ -39,7 +43,9 @@ import warnings
+ 
+ import numpy as np
+ import requests
+-from flask import Flask, jsonify, render_template, request, url_for
++from flask import Flask, abort, jsonify, render_template, request, send_from_directory, url_for
++
++import analysis_jobs
+ 
+ ASTRO = False
+ try:
+@@ -540,6 +546,44 @@ def sbident():
+     return jsonify(out)
+ 
+ 
++# ------------------------------------------- SPHEREx image time-lapse (the pipeline in Jonah_Code_File) ---
++# The run takes seconds to minutes, so it is a background job (analysis_jobs.py): POST starts it, the browser polls.
++JOB_ID = re.compile(r"[0-9a-f]{16}")
++PNG_NAME = re.compile(r"[a-z]+_\d{1,5}")
++
++
++@app.route("/api/analysis", methods=["POST"])
++def analysis_start():
++    try:
++        req = analysis_jobs.pipeline().web_request(request.get_json(force=True, silent=True))
++    except ValueError as e:
++        return jsonify({"error": str(e)}), 400
++    except Exception as e:                               # the pipeline (or one of its packages) could not be loaded
++        return jsonify({"error": analysis_jobs.friendly(e)}), 503
++    return jsonify({"job": analysis_jobs.submit(req), "request": req}), 202
++
++
++@app.route("/api/analyses")
++def analyses_done():
++    """Every finished analysis, for the viewer to draw where SPHEREx images have been analysed."""
++    return jsonify({"analyses": analysis_jobs.finished()})
++
++
++@app.route("/api/analysis/<jid>")
++def analysis_status(jid):
++    job = analysis_jobs.status(jid) if JOB_ID.fullmatch(jid) else None
++    if job is None:
++        return jsonify({"error": "unknown job"}), 404
++    return jsonify({"job": jid, **job})
++
++
++@app.route("/api/analysis/<jid>/<name>.png")
++def analysis_image(jid, name):
++    if not JOB_ID.fullmatch(jid) or not PNG_NAME.fullmatch(name):
++        abort(404)
++    return send_from_directory(analysis_jobs.folder(jid), name + ".png", max_age=3600)
++
++
+ def main(port=5000):
+     """Start the development server. The ephemeris loads in the background (the first run downloads 32 MB)."""
+     print(f"XARVIS running: viewer http://127.0.0.1:{port}/  ·  about page http://127.0.0.1:{port}/about")
+diff --git a/Test_Robert_Code_Folder/static/css/viewer.css b/Test_Robert_Code_Folder/static/css/viewer.css
+index 3f58672..79ae397 100644
+--- a/Test_Robert_Code_Folder/static/css/viewer.css
++++ b/Test_Robert_Code_Folder/static/css/viewer.css
+@@ -70,7 +70,7 @@ input[type=checkbox] { accent-color:var(--accent); }
+ .ti .tn { font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .ti .tm { font-size:11px; color:var(--dim); }
+ .tmsg { padding:8px; font-size:12px; color:var(--dim); line-height:1.4; }
+ #tLookup { width:100%; font-size:10.5px; } #tMsg { font-size:11.5px; line-height:1.4; } #tMsg:empty { display:none; } #tMsg a { color:#8fa3cf; }
+-#layers .sw { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:-1px; } #layers .sw.now { background:#00b5e255; border:1px solid #00b5e2; } #layers .sw.all { background:#00b5e214; border:1px dashed #ff9d6b; }
++#layers .sw { display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:-1px; } #layers .sw.done { background:#5fe0a026; border:1px solid #5fe0a0; } #layers .sw.now { background:#00b5e255; border:1px solid #00b5e2; } #layers .sw.all { background:#00b5e214; border:1px dashed #ff9d6b; }
+ #spinPanel { border-top:1px solid var(--line); padding-top:6px; display:flex; flex-direction:column; gap:6px; } #spinPanel[hidden] { display:none; }
+ #spinPanel .grp { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; display:flex; justify-content:space-between; } #spinPanel .grp span { color:var(--fg); letter-spacing:.04em; }
+ #spinPanel .row { display:flex; gap:6px; } #spinPanel .row button { flex:1 1 0; min-width:0; padding:5px 0; font-size:10.5px; letter-spacing:.02em; }
+@@ -91,26 +91,27 @@ input[type=checkbox] { accent-color:var(--accent); }
+ #tip .note { color:var(--dim); font-size:12px; margin-top:5px; }
+ #anaBack { position:absolute; inset:0; z-index:20; background:#02040acc; display:flex; align-items:center; justify-content:center; padding:16px; }
+ #anaBack[hidden] { display:none; }
+-#ana { position:relative; width:560px; max-width:100%; max-height:calc(100vh - 32px); overflow-y:auto; border-top-color:var(--nasa); padding:14px 16px 16px; }
++#ana { position:relative; width:1180px; max-width:100%; max-height:calc(100vh - 32px); overflow-y:auto; border-top-color:var(--nasa); padding:14px 16px 16px; }
+ #ana .anaHead { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+ #ana .h { color:var(--esa); font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; }
+ #anaTitle { font-size:16px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; }
+-#anaX { font-size:16px; padding:2px 6px; }
++#anaX, #anaMin { font-size:16px; padding:2px 8px; } .anaHeadBtns { display:flex; gap:2px; }
++/* two columns: the images (left, stays in view while the data scrolls) and the data (right); one column without images */
++#ana.noviz { width:560px; } #ana.noviz .anaBody { grid-template-columns:minmax(0, 1fr); } #ana.noviz .anaLeft { display:none; }
++.anaBody { display:grid; grid-template-columns:minmax(0, 1.12fr) minmax(0, 1fr); gap:18px; align-items:start; }
++.anaLeft { position:sticky; top:0; z-index:1; }
++.anaRight { min-width:0; } .anaRight > :first-child { margin-top:12px; }
++#tlData[hidden] { display:none; } #tlData .sbh, #tlDb .sbh { font-size:10.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--esa); margin:14px 0 4px; }
++@media (max-width:900px) { .anaBody { grid-template-columns:minmax(0, 1fr); } .anaLeft { position:static; } }
+ #anaRows { margin-top:10px; }
+ #anaVis { margin-top:10px; padding:9px 12px; font-size:13px; line-height:1.45; border:1px solid; }
+ #anaVis.ok { border-color:#5fe0a066; background:#5fe0a014; } #anaVis.no { border-color:#ff8a7a88; background:#ff6b5a18; }
+ #anaVis b { display:block; font-size:14px; margin-bottom:2px; } #anaVis span { color:var(--dim); } #anaVis .span { display:block; margin-top:6px; padding-top:6px; border-top:1px solid #ffffff1a; }
+ #anaRows .v { display:flex; justify-content:space-between; gap:12px; font-size:12.5px; line-height:19px; } #anaRows .v span:first-child { color:var(--dim); white-space:nowrap; } #anaRows .v span:last-child { text-align:right; }
+ #anaViz { margin-top:12px; border:1px dashed #34436a; padding:12px 14px 14px; text-align:center; font-size:12px; line-height:1.45; }
+-#anaViz .vh { display:flex; justify-content:space-between; font-size:10.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--esa); margin-bottom:6px; }
+-#anaMap { position:static; inset:auto; cursor:default; width:100%; height:auto; aspect-ratio:440/300; display:block; background:#050913; border:1px solid var(--line); }
+-#anaLegend { font-size:11px; margin:6px 0 10px; text-align:left; }
+-#anaTarget:empty, #anaSB:empty { display:none; }
++#anaTarget:empty { display:none; }
+ #anaTarget { margin-top:10px; border-left:2px solid var(--esa); padding:4px 10px; font-size:12.5px; }
+-#anaTarget .v, #anaSB .v { display:flex; justify-content:space-between; gap:12px; line-height:19px; } #anaTarget .v span:first-child { color:var(--dim); white-space:nowrap; }
+-#anaSB { margin-top:12px; font-size:12px; } #anaSB .sbh { font-size:10.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--esa); margin-bottom:4px; }
+-#anaSB table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; } #anaSB td, #anaSB th { text-align:left; padding:3px 6px 3px 0; border-bottom:1px solid #141c33; }
+-#anaSB th { color:var(--dim); font-weight:500; font-size:11px; } #anaSB td:not(:first-child), #anaSB th:not(:first-child) { text-align:right; }
++#anaTarget .v { display:flex; justify-content:space-between; gap:12px; line-height:19px; } #anaTarget .v span:first-child { color:var(--dim); white-space:nowrap; }
+ #gotoPanel { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--line); padding-top:8px; } #gotoPanel[hidden] { display:none; }
+ #gotoPanel input[type=text] { width:100%; min-width:0; padding:5px 6px; font-size:12.5px; text-transform:none; letter-spacing:0; }
+ #gotoPanel .gl { display:flex; flex-direction:column; gap:2px; font-size:10.5px; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); }
+@@ -120,7 +121,71 @@ input[type=checkbox] { accent-color:var(--accent); }
+ #gotoPanel .adv[open] summary { margin-bottom:6px; } #gotoPanel input[type=number] { width:100%; padding:5px 6px; font-size:12.5px; background:#050913; border:1px solid #34436a; border-radius:2px; color:var(--fg); text-transform:none; letter-spacing:0; }
+ #gPixInfo { font-size:11.5px; margin-top:4px; } #gMsg.err { color:#ff8a7a; }
+ #gotoChip:empty { display:none; }
+-#anaViz .ph { font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; color:var(--fg); margin-bottom:6px; }
++#anaViz .ph { font-size:10.5px; text-transform:uppercase; letter-spacing:.16em; color:var(--fg); }
++/* SPHEREx image time-lapse inside the analysis popup */
++#tl { margin-bottom:10px; }
++#tl .tlHead { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; } #tlCount { padding:3px 6px; font-size:12px; margin-left:4px; }
++#tlRetry[hidden], #tlPlayer[hidden], #tlLoad[hidden], #tlErr[hidden] { display:none; }
++/* the loading card, where the images will appear */
++#tlLoad { min-height:360px; display:flex; align-items:center; justify-content:center; padding:8px 0; }
++#tlLoad .lc { width:100%; max-width:440px; background:#070b16; border:1px solid var(--line); border-top:2px solid var(--esa); padding:14px 16px; text-align:left; box-shadow:0 10px 40px #000a; }
++#tlLoad .lcTop { display:flex; gap:12px; align-items:center; } #tlLoad .lcTop b { font-size:14px; } #tlLoad .small { font-size:11px; }
++.spin { width:26px; height:26px; flex:none; border-radius:50%; border:3px solid #ffffff22; border-top-color:var(--esa); animation:spin .9s linear infinite; }
++@keyframes spin { to { transform:rotate(360deg); } }
++#tlSteps { list-style:none; margin:12px 0 10px; padding:0; font-size:12.5px; line-height:1.75; counter-reset:st; }
++#tlSteps li { counter-increment:st; color:var(--dim); } #tlSteps li::before { content:counter(st); display:inline-block; width:18px; height:18px; line-height:18px; margin-right:8px; text-align:center; border-radius:50%; border:1px solid #34436a; font-size:10.5px; }
++#tlSteps li.on { color:var(--fg); font-weight:600; } #tlSteps li.on::before { border-color:var(--esa); color:var(--esa); }
++#tlSteps li.done { color:var(--fg); } #tlSteps li.done::before { content:'✓'; background:#5fe0a0; border-color:#5fe0a0; color:#02040a; font-weight:700; }
++#tlMsg { margin-top:6px; font-size:11.5px; min-height:2.9em; overflow-wrap:anywhere; }
++#tlLoad .tipBox { margin:10px 0 12px; padding:8px 10px; background:#0b1224; border-left:2px solid var(--warn); font-size:12px; line-height:1.5; min-height:5.6em; }
++#tlLoad .tipHead { display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; } #tlLoad .tipHead b { color:var(--warn); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; }
++#tlTipNext { font-size:11px; padding:0 2px; } #tlMinBtn { width:100%; }
++#tlErr { min-height:200px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#ff8a7a; font-size:12.5px; padding:16px; }
++#tlBar { height:4px; background:#141c33; margin-top:8px; overflow:hidden; } #tlFill { display:block; height:100%; width:0; background:var(--esa); transition:width .3s; }
++#tlLoad #tlBar { margin-top:4px; } #tlBar.wait #tlFill { width:30%; animation:tlWait 1.2s linear infinite; } @keyframes tlWait { from { margin-left:-30%; } to { margin-left:100%; } }
++#tlImg { display:block; width:100%; max-width:560px; aspect-ratio:1; margin:0 auto; background:#000; border:1px solid var(--line); }
++#tl .tlCtl { display:flex; align-items:center; gap:4px; margin-top:8px; } #tlSlide { flex:1; min-width:0; margin:0 6px; } #tlNum { font-variant-numeric:tabular-nums; white-space:nowrap; font-size:12px; }
++#tl .ic { width:32px; height:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; } #tl .ic svg { width:16px; height:16px; fill:currentColor; }
++#tl .ic.play { width:40px; height:34px; background:var(--nasa); border-color:var(--nasa); color:#fff; } #tl .ic.play svg { width:18px; height:18px; } #tl .ic.play:hover { filter:brightness(1.15); }
++#tlSpeed { padding:4px 4px; font-size:12px; margin-left:4px; }
++#tlInfo { margin-top:8px; text-align:left; font-size:12.5px; } #tlInfo .v { display:flex; justify-content:space-between; gap:12px; line-height:19px; } #tlInfo .v span:first-child { color:var(--dim); white-space:nowrap; } #tlInfo .v span:last-child { text-align:right; font-variant-numeric:tabular-nums; }
++#tlNote { margin-top:10px; font-size:11px; text-align:left; }
++#tlTime { font-size:11px; text-align:left; margin:-2px 0 8px; }
++#tlLoadTime { margin-top:10px; padding:6px 9px; background:#ffb81c14; border:1px solid #ffb81c55; color:var(--fg); font-size:11.5px; line-height:1.45; }
++#tlDisclaimer { margin-top:8px; padding:7px 10px; text-align:left; font-size:11px; line-height:1.45; color:var(--dim); border:1px solid #ffb81c55; border-left:3px solid var(--warn); background:#ffb81c0d; }
++#tlDisclaimer b { color:var(--warn); }
++/* the minimized analysis */
++#anaMini { position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:25; display:flex; align-items:stretch; background:var(--card); border:1px solid var(--line); border-top:2px solid var(--esa); box-shadow:0 8px 30px #000b; }
++#anaMini[hidden] { display:none; } #anaMini.done { border-top-color:#5fe0a0; animation:pop .5s ease-out; } #anaMini.err { border-top-color:#ff6b5a; }
++#anaMiniOpen { display:flex; align-items:center; gap:10px; padding:8px 12px; background:transparent; border:0; text-align:left; font-size:12.5px; max-width:360px; text-transform:none; letter-spacing:normal; font-weight:400; }
++#anaMiniOpen > span:last-child { display:flex; flex-direction:column; } #anaMiniText { font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
++#anaMiniIcon.ok { animation:none; border-color:#5fe0a0; background:#5fe0a0; position:relative; } #anaMiniIcon.ok::after { content:'✓'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#02040a; font-weight:800; font-size:14px; }
++#anaMiniIcon.bad { animation:none; border-color:#ff6b5a; background:#ff6b5a; position:relative; } #anaMiniIcon.bad::after { content:'!'; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#02040a; font-weight:800; }
++#anaMiniX { padding:0 10px; }
++@keyframes pop { 0% { transform:translateX(-50%) scale(.9); } 60% { transform:translateX(-50%) scale(1.05); } 100% { transform:translateX(-50%) scale(1); } }
++@media (prefers-reduced-motion:reduce) { .spin, #anaMini.done { animation:none; } }
++#tlView { position:relative; width:100%; max-width:560px; margin:0 auto; } #tlView #tlImg { max-width:none; }
++#tlSvg { position:absolute; inset:0; width:100%; height:100%; overflow:hidden; cursor:crosshair; }
++#tlSvg text { font:600 11px system-ui,sans-serif; paint-order:stroke; stroke:#000; stroke-width:3px; pointer-events:none; }
++#tlSvg .tag { font-weight:700; stroke:none; fill:#000; }
++#tlMapBar { display:flex; gap:10px; align-items:baseline; justify-content:center; flex-wrap:wrap; margin-top:6px; font-size:11.5px; } #tlMapBar label { white-space:nowrap; cursor:pointer; }
++#tlMapKey { display:flex; flex-wrap:wrap; justify-content:center; gap:3px 12px; margin-top:4px; font-size:10.5px; } #tlMapKey[hidden] { display:none; }
++#tlMapKey .mk { display:inline-block; width:12px; text-align:center; margin-right:3px; font-weight:700; }
++.mk.new { color:#ffe600; } .mk.named { color:#fff; } .mk.gaia { color:#4fd2ff; } .mk.catwise { color:#ff9a3c; } .mk.sb { color:#ff4dff; } .mk.planet { color:#7cfc00; } .mk.art { color:#999; }
++#tlSel:empty, #tlDb:empty, #tlTrack[hidden] { display:none; }
++#tlSel { margin-top:10px; padding:8px 10px; border:1px solid #ffe60066; background:#ffe6000d; text-align:left; font-size:12.5px; }
++#tlSel b { display:block; font-size:13.5px; margin-bottom:2px; } #tlSel .row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
++#tlTrack { margin:0 0 8px; padding:7px 10px; border:1px solid var(--esa); background:#00b5e214; text-align:left; font-size:12.5px; display:flex; justify-content:space-between; align-items:center; gap:10px; }
++#tlDb { margin-top:12px; text-align:left; font-size:12px; } #tlDb .sbh { font-size:10.5px; text-transform:uppercase; letter-spacing:.14em; color:var(--esa); margin:10px 0 4px; }
++#tlDb .v { display:flex; justify-content:space-between; gap:12px; line-height:19px; } #tlDb .v span:first-child { color:var(--dim); white-space:nowrap; } #tlDb .v span:last-child { text-align:right; }
++#tlDb table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; } #tlDb td, #tlDb th { text-align:left; padding:3px 6px 3px 0; border-bottom:1px solid #141c33; vertical-align:top; }
++#tlDb th { color:var(--dim); font-weight:500; font-size:11px; } #tlDb tr.pick { cursor:pointer; } #tlDb tr.pick:hover td { background:#ffe60014; } #tlDb tr.on td { background:#ffe60026; }
++#tlDb .new { color:#ffe600; font-weight:700; white-space:nowrap; }
++#tlTitle { font:11.5px/1.45 ui-monospace,Consolas,monospace; white-space:pre-wrap; margin:0 0 6px; min-height:4.35em; color:var(--fg); }
++#tlKey { display:flex; flex-wrap:wrap; justify-content:center; align-items:center; gap:6px 14px; margin-top:6px; font-size:11px; color:var(--dim); }
++#tlKey .ring { display:inline-block; width:10px; height:10px; border-radius:50%; border:2px solid #ff0000; vertical-align:-2px; margin-right:4px; }
++#tlKey .ring.ref { border:2px dashed #00bfff; }
++#tlKey .bar { display:inline-block; width:70px; height:8px; vertical-align:0; margin:0 4px; background:linear-gradient(90deg,#80a8ff,#bdd6ff,#ffeed1,#ffb36b,#ff6b47); }
+ #anaPayload { margin-top:12px; font-size:12px; } #anaPayload summary { cursor:pointer; color:var(--dim); }
+ #anaJSON { background:#050913; border:1px solid var(--line); padding:8px 10px; margin:8px 0 0; font:11px/1.4 ui-monospace,Consolas,monospace; white-space:pre-wrap; word-break:break-all; max-height:200px; overflow:auto; }
+ #ana .anaBtns { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+diff --git a/Test_Robert_Code_Folder/static/js/analysis.js b/Test_Robert_Code_Folder/static/js/analysis.js
+index c5e770f..ad110af 100644
+--- a/Test_Robert_Code_Folder/static/js/analysis.js
++++ b/Test_Robert_Code_Folder/static/js/analysis.js
+@@ -1,6 +1,7 @@
+ // XARVIS viewer · analysis.js
+ // Go to sky coordinates (test targets from ESA Gaia DR3, typed RA/Dec) and the sky point analysis popup: visibility,
+-// target motion, known asteroids in the patch (JPL SB Ident) and the patch map. requestAnalysis() is the backend stub.
++// target motion, known asteroids in the patch (JPL SB Ident), the patch map and the SPHEREx image time-lapse
++// (requestAnalysis() sends the payload to the backend pipeline and plays the images it returns).
+ // Plain browser scripts sharing one global scope, loaded in order by templates/index.html:
+ // core.js, scene.js, draw.js, tracker.js, view3d.js, analysis.js, app.js.
+ 'use strict';
+@@ -71,7 +72,7 @@ function drawSkyTarget() {
+ 
+ // ========================================================================= analysis popup ===
+ // Double-click: take the sky direction under the cursor (as seen from Earth: the stars are effectively at infinity, so
+-// the geocentric direction equals the direction drawn), package it and show it. PLACEHOLDER - nothing is sent yet.
++// the geocentric direction equals the direction drawn), package it, show it and send it to the backend (requestAnalysis).
+ function analysisPayload(dir, T = null, hw = 0.25) {
+   const eq = ecl2eqVec(dir), [ra, dec] = ecl2eq(dir), [lam, beta] = eclLonLat(dir), [l, b] = ecl2gal(dir);
+   const sp = state.spherex, elong = Math.acos(clamp(dot(dir, state.sun_dir), -1, 1))/D2R;
+@@ -87,10 +88,277 @@ function analysisPayload(dir, T = null, hw = 0.25) {
+     spherex: {geocentric_km_j2000_equatorial: ecl2eqVec(sp.off).map(v => +(v*AU_KM).toFixed(1)), altitude_km: +sp.altitude_km.toFixed(1), orbit_source: sp.source},
+   };
+ }
+-// TODO(backend): send the payload to the analysis service, e.g.
+-//   const r = await fetch('/api/analysis', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+-// and draw the returned data inside #anaViz. Until then this does nothing and the popup shows a placeholder.
+-async function requestAnalysis(payload) { return null; }
++// ------------------------------------------------------------------ SPHEREx image time-lapse ---
++// The backend (Jonah_Code_File, through app.py) downloads the SPHEREx images of the patch from NASA/IPAC IRSA, measures
++// them and returns one PNG per image, all on one grid centred on the target (north up, east left), so they line up.
++// That takes seconds to minutes, so it is a background job: POST /api/analysis starts it (the popup's payload plus
++// max_images), GET /api/analysis/<job> is polled once a second for progress, and when it is done its summary lists the
++// frames: time, detector, wavelength, signal-to-noise and flags for each. Nothing is requested when the image box is
++// hidden (outside SPHEREx's view, or a date with no data).
++const tl = {req: 0, job: null, frames: [], imgs: [], i: 0, playing: true, timer: null, fps: 4, state: 'idle', tipTimer: null, tip: 0};
++// While the data comes from NASA: a loading card with the five steps, a progress bar, the pipeline's own messages and
++// tips (what each group of users can do with what is shown - see AUDIENCE.md). "Minimize" keeps it loading in a badge.
++const TL_STEPS = ['Search the SPHEREx archive', 'Download and measure the images', 'Compare with the catalogs and map the sky', 'Make the images', 'Load them here'];
++const TL_TIPS = [
++  'SPHEREx maps the whole sky every six months in 102 infrared colours (0.75–5 µm). XARVIS shows you every image it took of the point you picked, in time order.',
++  'Red circle: where the target was found in this image. Dashed blue: where it was in the first image (T1). If they drift apart, it moved.',
++  'Yellow rings are NEW objects: in no catalog (ESA Gaia DR3, CatWISE2020, Hipparcos), not a known asteroid, comet or planet, and not a flagged detector artifact. Click one, then "Track this object".',
++  'Colour compares two wavelengths SPHEREx took at the same instant: redder means relatively brighter in the infrared (cool stars, brown dwarfs, dust); bluer means hotter.',
++  'Students and teachers: nearby stars such as Barnard\'s Star move several arcseconds a year. Pick one under "Go to sky coordinates → Test targets" and watch it shift across the survey.',
++  'Asteroid hunters: a NEW object classed "moving" has a fitted path across the images. Track it to collect every SPHEREx image along that path.',
++  'Researchers: the per-image flags (TRANSIENT, OUTLIER, saturated, bad pixels) tell you which measurements to trust before you download the data from IRSA.',
++  'Variable stars: each image\'s brightness is compared with the object\'s own spectrum; a "BRIGHTNESS CHANGE" in the frame title marks an image that stands out.',
++  'Every position is checked against ESA Gaia DR3: the "Positions vs Gaia" line shows how well SPHEREx\'s pointing matches, typically well under one 6.15″ pixel.',
++  'The first look at a patch downloads from NASA/IPAC IRSA (seconds to a minute or two). Asking again is instant: the results are kept.',
++  'NASA/IPAC IRSA is sometimes busy and answers "502". XARVIS retries automatically; if it still fails, "Try again" a minute later usually works.',
++  'More images (the "Images" menu) cover more of the survey\'s visits but take longer to collect. 8 is quickest; 24 is a good balance.',
++  'Keyboard, once the images are in: ← → step through them, Space plays and pauses, Home / End jump to the first / last.'];
++// How long a NEW analysis can take (measured: 8 to 50 images up to about a minute, 100 or more up to about 3 minutes;
++// a tracked asteroid searches a whole time window, so it can take longer). Repeats are instant: results are kept.
++function tlTimeText(count) {
++  const high = count === 'all' || +count >= 100;
++  return high ? `With ${count === 'all' ? 'all the' : count} images, a new analysis can take up to about 3 minutes.`
++              : `With ${count} images, a new analysis can take up to about a minute.`;
++}
++function tlTimeHint() {
++  $('tlTime').textContent = tlTimeText($('tlCount').value) + ' Low counts (8 to 50) take up to about a minute; high counts (100 or more) up to about 3. Opening one again is instant.';
++}
++function tlTipShow(k) { tl.tip = ((k % TL_TIPS.length) + TL_TIPS.length) % TL_TIPS.length; $('tlTip').textContent = TL_TIPS[tl.tip]; }
++function tlTips(on) {
++  clearInterval(tl.tipTimer); tl.tipTimer = null;
++  if (on) { if (!$('tlTip').textContent) tlTipShow(Math.floor(Math.random()*TL_TIPS.length)); tl.tipTimer = setInterval(() => tlTipShow(tl.tip + 1), 9000); }
++}
++function tlStep(msg, done, total) {                           // which of the five steps a progress message belongs to
++  if (/^Loading the images/.test(msg)) return 4;
++  if (/^Making the images/.test(msg)) return 3;
++  if (total && done < total) return 1;
++  if (total && done >= total) return 2;
++  return 0;
++}
++function tlReset() {
++  clearInterval(tl.timer); tl.timer = null; tlTips(false); tl.frames = []; tl.imgs = []; tl.state = 'idle';
++  $('tlSel').innerHTML = ''; $('tlDb').innerHTML = ''; $('tlPlayer').hidden = $('tlData').hidden = $('tlLoad').hidden = $('tlErr').hidden = true; $('tlMsg').textContent = '';
++}
++function tlProgress(msg, done, total) {                         // no total yet: a moving bar, so the page never looks frozen
++  const step = tlStep(msg, done, total);
++  tl.state = 'loading'; $('tlErr').hidden = true; $('tlLoad').hidden = false; tlTips(true);
++  $('tlLoadTitle').textContent = tl.payload && tl.payload.track ? `Collecting SPHEREx data on ${tl.payload.track.name}` : 'Collecting SPHEREx data from NASA';
++  $('tlLoadTime').textContent = tlTimeText($('tlCount').value) + (tl.payload && tl.payload.track && tl.payload.track.kind === 'asteroid' ? ' Tracking an asteroid searches its whole time window, so it can take a little longer.' : '') + ' You can minimize this and keep exploring.';
++  [...$('tlSteps').children].forEach((li, k) => { li.className = k < step ? 'done' : k === step ? 'on' : ''; });
++  $('tlMsg').textContent = msg; $('tlBar').classList.toggle('wait', !total || step === 2 || step === 3);
++  $('tlFill').style.width = total && step !== 2 && step !== 3 ? (100*done/total).toFixed(1) + '%' : '';
++  tl.miniText = `${TL_STEPS[step]}${total && (step === 1 || step === 4) ? ` · ${done} of ${total}` : ''}`; tlMini(tl.miniText);
++}
++function tlFail(msg) {
++  clearInterval(tl.timer); tl.timer = null; tlTips(false); tl.state = 'error';
++  $('tlPlayer').hidden = $('tlData').hidden = $('tlLoad').hidden = true; $('tlErr').hidden = false; $('tlErrMsg').textContent = msg;
++  tlMini(msg);
++}
++// ---- minimized: a badge with a spinner while it loads, a check mark when the images are ready; click to open it again
++function tlMini(text) {
++  const icon = $('anaMiniIcon'), done = tl.state === 'done', bad = tl.state === 'error';
++  icon.className = 'spin' + (done ? ' ok' : bad ? ' bad' : '');
++  $('anaMini').className = done ? 'done' : bad ? 'err' : '';
++  $('anaMiniTitle').textContent = done ? 'SPHEREx images ready' : bad ? 'The analysis failed' : 'Collecting SPHEREx data…';
++  $('anaMiniText').textContent = done ? `${tl.frames.length} images · ${$('anaTitle').textContent} · click to open` : text;
++}
++function minimizeAnalysis() { if ($('anaBack').hidden) return; $('anaBack').hidden = true; $('anaMini').hidden = false; tlMini(tl.state === 'error' ? $('tlErrMsg').textContent : tl.miniText || ''); }
++function restoreAnalysis() { $('anaMini').hidden = true; $('anaBack').hidden = false; $('anaClose').focus({preventScroll: true}); }
++async function tlJSON(url, opt) {                               // JSON from our server, or a readable error
++  let r; try { r = await fetch(url, opt); } catch (e) { throw new Error('The XARVIS server did not answer. Check that it is still running, then try again.'); }
++  let d = null; try { d = await r.json(); } catch (e) { /* not JSON: handled below */ }
++  if (!r.ok || !d) throw new Error((d && d.error) || `The server could not start the analysis (HTTP ${r.status}).`);
++  return d;
++}
++async function requestAnalysis(payload) {
++  const id = ++tl.req; tlReset();
++  if (!payload || $('anaViz').hidden) return null;
++  payload = {...payload}; tl.payload = payload;
++  if (!payload.track) { tl.base = payload; tl.sel = null; }            // the patch itself (not an object picked in it)
++  tlTrackBar();
++  const count = $('tlCount').value; payload.max_images = count === 'all' ? null : +count;
++  $('anaJSON').textContent = JSON.stringify(payload, null, 2);
++  tlProgress(payload.track ? `Asking for the SPHEREx images of ${payload.track.name}…` : 'Asking for the SPHEREx images of this patch…', 0, 0);
++  const t0 = performance.now();
++  try {
++    const start = await tlJSON('/api/analysis', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
++    for (;;) {
++      if (id !== tl.req) return null;                           // the popup was closed or another point was opened
++      const d = await tlJSON('/api/analysis/' + start.job);
++      if (id !== tl.req) return null;
++      if (d.status === 'error') throw new Error(d.error || 'The analysis failed.');
++      if (d.status === 'done') { await tlShow(id, start.job, d.summary, payload); return d.summary; }
++      const slow = !d.total && performance.now() - t0 > 20000 ? ' The archive is slow to answer; still trying.' : '';
++      tlProgress((d.message || 'Working…') + slow, d.done, d.total);
++      await new Promise(res => setTimeout(res, 1000));
++    }
++  } catch (e) { if (id === tl.req) tlFail(e.message); return null; }
++}
++async function tlShow(id, job, S, payload) {
++  const n = S.frames.length;
++  if (!n) throw new Error('SPHEREx has no usable image of this point yet.');
++  let loaded = 0; tlProgress(`Loading the images: 0 of ${n}`, 0, n);
++  const imgs = await Promise.all(S.frames.map(f => new Promise(res => { const im = new Image();
++    im.onload = im.onerror = () => { if (id === tl.req) tlProgress(`Loading the images: ${++loaded} of ${n}`, loaded, n); res(im); }; im.src = `/api/analysis/${job}/${f.png}`; })));
++  if (id !== tl.req) return;
++  tl.job = job; tl.frames = S.frames; tl.imgs = imgs; tl.circles = S.circles || {red: 'object found in this frame', blue: 'object at T1'};
++  tl.S = S; tl.sel = null; $('tlSvg').setAttribute('viewBox', `0 0 ${S.image_px} ${S.image_px}`);
++  const hasMap = S.frames.some(f => f.objects); $('tlMapBar').hidden = !hasMap; $('tlMapKey').hidden = !hasMap || !$('tlMapOn').checked;
++  tlDatabase(S);
++  const mjd = payload.time.jd_utc - 2400000.5; let near = 0;      // start on the image taken closest to the date shown
++  S.frames.forEach((f, i) => { if (Math.abs(f.mjd - mjd) < Math.abs(S.frames[near].mjd - mjd)) near = i; });
++  tlTips(false); $('tlLoad').hidden = true; $('tlMsg').textContent = ''; $('tlPlayer').hidden = $('tlData').hidden = false; $('tlSlide').max = n - 1;
++  tl.state = 'done'; tlMini(''); loadAnalysed();             // (the viewer's "Analysed patches" layer gains this one)
++  const asked = Math.round(2*payload.patch.half_width_deg*3600/SPHEREX_PIX), am = (S.patch_px*S.pixel_arcsec/60).toFixed(1);
++  $('tlNote').innerHTML = `${n} of the ${S.images_available ?? n} SPHEREx images that cover this point${S.images_available > n ? ', spread over all its survey dates' : ''}, in time order. ` +
++    `Each is ${S.patch_px} × ${S.patch_px} SPHEREx pixels (${am}′, 6.15″ each) centred on ${S.target.moving ? 'its predicted position in that image (JPL Horizons / fitted path), so the object stays in the middle' : 'the target'}, N ↑ · E ←, shown like the XARVIS desktop viewer: ` +
++    `colour from the simultaneous image on the other detector arm, sharpened and upscaled, the target at the same brightness and colour in every frame (display only; the measurements use the original pixels).` +
++    (asked > S.patch_px ? ` The patch is ${asked} pixels wide; the images are limited to ${S.patch_px}.` : '') + `<br>${esc(S.source)}.`;
++  tlFrame(near); tlPlay(n > 1);
++}
++function tlFrame(i) {
++  const n = tl.frames.length; if (!n) return; tl.i = i = ((i % n) + n) % n; const f = tl.frames[i];
++  $('tlImg').src = tl.imgs[i].src; $('tlSlide').value = i; $('tlNum').textContent = `T${i + 1} / ${n}`;
++  $('tlTitle').textContent = (f.title || [`T${i + 1} of ${n}`]).join('\n');           // the desktop viewer's frame title
++  const c = f.colour_um;
++  $('tlKey').innerHTML = `<span><i class="ring"></i>${esc(tl.circles.red)}</span><span><i class="ring ref"></i>${esc(tl.circles.blue)}</span>` +
++    (c ? `<span>bluer: brighter at ${c[0].toFixed(2)} µm<i class="bar"></i>redder: brighter at ${c[1].toFixed(2)} µm</span>` : '<span>no simultaneous frame: brightness only</span>');
++  const flags = [...(f.flags_in_aperture || []), ...(f.saturated ? ['saturated'] : [])];
++  const rows = [['Time (UTC)', esc(f.time_utc)], ['Detector', f.detector ?? '—'], ['Wavelength', f.wavelength_um == null ? '—' : f.wavelength_um.toFixed(3) + ' µm'],
++                ['Signal-to-noise at the target', f.snr == null ? 'not measurable' : f.snr.toFixed(1)],
++                ['Flags at the target', flags.length ? esc(flags.join(', ')) + (f.n_bad_in_aperture ? ` · ${f.n_bad_in_aperture} bad pixel${f.n_bad_in_aperture === 1 ? '' : 's'}` : '') : 'none']];
++  $('tlInfo').innerHTML = rows.map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
++  $('tlMapText').textContent = f.map_text || '';
++  tlDraw();
++}
++// ---- what the backend found in the images: the sky map (every object named; NEW = in no catalog), the circles, and
++// picking an object to track it (like the desktop viewer: click an object, then track it; click empty sky to go back)
++const SVGNS = 'http://www.w3.org/2000/svg', MAP_COLOUR = {new: '#ffe600', 'small body': '#ff4dff', planet: '#7cfc00', artifact: '#999999', Gaia: '#4fd2ff', CatWISE: '#ff9a3c', Hipparcos: '#ffffff'};
++function svgEl(tag, attrs, parent) { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; }
++function tlDraw() {
++  const svg = $('tlSvg'), f = tl.frames[tl.i]; if (!f) return;
++  svg.replaceChildren();
++  if ($('tlMapOn').checked && f.objects) for (const o of f.objects) {
++    const g = svgEl('g', {class: 'o'}, svg), c = o.kind === 'star' ? MAP_COLOUR[o.named ? 'Hipparcos' : o.source] || '#fff' : MAP_COLOUR[o.kind] || '#fff', x = o.x, y = o.y;
++    const line = {stroke: c, 'stroke-width': 1.6, fill: 'none'};
++    if (o.kind === 'star' && o.named) svgEl('path', {d: starPath(x, y, 7), ...line}, g);
++    else if (o.kind === 'star' && o.source === 'CatWISE') svgEl('path', {d: `M${x-4} ${y-4}L${x+4} ${y+4}M${x+4} ${y-4}L${x-4} ${y+4}`, ...line}, g);
++    else if (o.kind === 'star') svgEl('path', {d: `M${x-5} ${y}H${x+5}M${x} ${y-5}V${y+5}`, ...line}, g);
++    else if (o.kind === 'artifact') svgEl('rect', {x: x - 5, y: y - 5, width: 10, height: 10, ...line, 'stroke-width': 1.2}, g);
++    else if (o.kind === 'new') { svgEl('circle', {cx: x, cy: y, r: 13, stroke: c, 'stroke-width': 7, 'stroke-opacity': 0.25, fill: 'none'}, g); svgEl('circle', {cx: x, cy: y, r: 13, stroke: c, 'stroke-width': 2.6, fill: 'none'}, g); }
++    else svgEl('path', {d: `M${x} ${y-7}L${x+7} ${y}L${x} ${y+7}L${x-7} ${y}Z`, ...line}, g);        // small body / planet
++    if (o.kind === 'new') {                                                // labelled, impossible to miss
++      const t = o.label, w = 6.6*t.length + 8, lx = Math.min(x + 16, +tl.S.image_px - w - 2), ly = Math.max(y - 26, 2);
++      svgEl('line', {x1: x, y1: y, x2: lx, y2: ly + 9, stroke: c, 'stroke-width': 1.4}, g);
++      svgEl('rect', {x: lx, y: ly, width: w, height: 17, rx: 3, fill: c, 'fill-opacity': 0.95}, g);
++      svgEl('text', {x: lx + 4, y: ly + 12.5, class: 'tag'}, g).textContent = t;
++    } else if ((o.kind === 'star' && o.named) || o.kind === 'small body' || o.kind === 'planet') {
++      const name = o.kind === 'star' ? o.label : (o.label.split('(')[0].trim() || o.label) + (o.detected ? '' : ' (not detected)');
++      svgEl('text', {x: x + 9, y: y - 7, fill: c}, g).textContent = name;
++    }
++    svgEl('title', {}, g).textContent = o.label;
++  }
++  // the circles: the analysed object, or the object picked in the images (red = this frame, blue = its first sighting)
++  let red = f.marks && f.marks.red, blue = f.marks && f.marks.blue;
++  if (tl.sel) { const O = tl.S.objects[tl.sel], here = (f.objects || []).find(o => o.id === tl.sel);
++    red = here ? [here.x, here.y] : null;
++    const first = O && tl.frames[O.frames[0] - 1], at = first && (first.objects || []).find(o => o.id === tl.sel); blue = at ? [at.x, at.y] : null; }
++  const R = (f.marks && f.marks.radius) || 16, RB = (f.marks && f.marks.blue_radius) || 21;
++  if (blue) svgEl('circle', {cx: blue[0], cy: blue[1], r: RB, stroke: '#00bfff', 'stroke-width': 2.2, 'stroke-dasharray': '7 5', fill: 'none', 'pointer-events': 'none'}, svg);
++  if (red) svgEl('circle', {cx: red[0], cy: red[1], r: R, stroke: '#ff0000', 'stroke-width': 2.2, fill: 'none', 'pointer-events': 'none'}, svg);
++}
++function tlClick(e) {                                         // the nearest object within reach, or empty sky: back to the target
++  const f = tl.frames[tl.i], svg = $('tlSvg'), r = svg.getBoundingClientRect(), W = +tl.S.image_px;
++  const x = (e.clientX - r.left)/r.width*W, y = (e.clientY - r.top)/r.height*W, reach = 14*W/r.width;
++  let best = null, bd = reach;
++  if ($('tlMapOn').checked) for (const o of f.objects || []) { const d = Math.hypot(o.x - x, o.y - y); if (d < bd) { bd = d; best = o; } }
++  tlSelect(best ? best.id : null);
++}
++function starPath(x, y, r) { let d = ''; for (let k = 0; k < 10; k++) { const a = -Math.PI/2 + k*Math.PI/5, q = k % 2 ? r*0.45 : r; d += (k ? 'L' : 'M') + (x + q*Math.cos(a)).toFixed(1) + ' ' + (y + q*Math.sin(a)).toFixed(1); } return d + 'Z'; }
++const KIND_TEXT = {Gaia: 'star in ESA Gaia DR3', CatWISE: 'source in CatWISE2020 only (red / dusty, no Gaia counterpart)', Hipparcos: 'named star (ESA Hipparcos)',
++  'small body': 'known asteroid / comet (NASA/JPL SB Ident, SBDB, Horizons)', planet: 'planet / Moon (NASA/JPL DE440s)', artifact: 'flagged detector artifact (SPHEREx FLAGS plane)', new: 'NEW object: in no catalog, not a known asteroid, comet or planet, not a flagged artifact'};
++function tlSelect(id) {
++  tl.sel = id && tl.S.objects[id] ? id : null; tlDraw();
++  for (const tr of document.querySelectorAll('#tlDb tr.pick')) tr.classList.toggle('on', tr.dataset.id === tl.sel);
++  const O = tl.sel && tl.S.objects[tl.sel];
++  if (!O) { $('tlSel').innerHTML = ''; $('tlKey').querySelector('span') && tlKeyText(); return; }
++  const what = O.kind === 'star' ? KIND_TEXT[O.named ? 'Hipparcos' : O.source] : KIND_TEXT[O.kind];
++  const ts = O.frames.map(n => 'T' + n), seen = O.detected_in.length;
++  $('tlSel').innerHTML = `<b>${esc(O.label)}</b><div class="dim">${esc(what || O.kind)}</div>` + (O.info ? `<div>${esc(O.info)}</div>` : '') +
++    `<div class="dim">In view in ${ts.length} of ${tl.frames.length} images (${esc(ts.slice(0, 12).join(', '))}${ts.length > 12 ? ' …' : ''}); detected in ${seen}. Red circle: this image; blue dashed: its first sighting.</div>` +
++    `<div class="row">${O.track ? `<button id="tlTrackGo" class="primary">Track this object</button>` : `<span class="dim">Can't be tracked: ${esc(O.reason || 'not supported')}.</span>`}<button id="tlUnsel" class="ghost">Back to the target</button></div>`;
++  if (O.track) $('tlTrackGo').onclick = () => { tlPlay(false); requestAnalysis({...tl.base, track: O.track}); };
++  $('tlUnsel').onclick = () => tlSelect(null);
++  tlKeyText();
++}
++function tlKeyText() {                                         // the circle legend follows what the circles show
++  const O = tl.sel && tl.S.objects[tl.sel], spans = $('tlKey').querySelectorAll('span');
++  if (spans.length < 2) return;
++  spans[0].lastChild.textContent = O ? `${O.label} in this image` : tl.circles.red;
++  spans[1].lastChild.textContent = O ? `${O.label} at its first sighting` : tl.circles.blue;
++}
++function tlTrackBar() {                                        // "Tracking X" with the way back to the patch
++  const P = tl.payload, on = !!(P && P.track);
++  $('tlTrack').hidden = !on; if (!on) return;
++  $('tlTrack').innerHTML = `<span>Tracking <b>${esc(P.track.name)}</b>, picked in the images of this patch</span><button id="tlBackBase">← Back to the patch</button>`;
++  $('tlBackBase').onclick = () => requestAnalysis(tl.base);
++}
++function tlDatabase(S) {                                       // what the images were compared with, and the NEW objects
++  const D = S.database || {}, rows = [];
++  if (!D.sky_map && !D.field_check) {
++    $('tlDb').innerHTML = `<div class="sbh">Compared with the catalogs</div><div class="dim">${S.target.moving ? 'This object moves, so each image is centred on its predicted position; the sky map and catalog comparison run for targets fixed on the sky (as in the desktop viewer).' : 'The catalogs could not be reached for this run.'}</div>` +
++      (D.notes || []).map(n => `<div class="dim">${esc(n)}</div>`).join('');
++    return;
++  }
++  const cs = D.catalog_stars || {};
++  rows.push(['Stars in the field', ['Gaia', 'CatWISE', 'Hipparcos'].filter(k => k in cs).map(k => `${cs[k]} ${{Gaia: 'ESA Gaia DR3', CatWISE: 'CatWISE2020', Hipparcos: 'ESA Hipparcos'}[k]}`).join(' · ') || '—']);
++  if (D.pointing) rows.push(['Positions vs Gaia DR3', D.pointing.matches ? `${D.pointing.matches} matches · median offset ${D.pointing.median_offset_arcsec.toFixed(2)}″` : 'no matches']);
++  if (D.sky_map) {
++    const sb = D.known_small_bodies || [];
++    rows.push(['Known asteroids / comets seen', sb.length ? sb.map(b => esc(b.name) + ` (${b.frames.map(n => 'T' + n).join(', ')})`).join('; ') : 'none (NASA/JPL SB Ident)']);
++    rows.push(['Planets / Moon', (D.planets || []).join(', ') || 'none']);
++  }
++  let html = '<div class="sbh">Compared with the catalogs</div>' + rows.map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('') +
++    (D.notes || []).map(n => `<div class="dim">${esc(n)}</div>`).join('');
++  if (D.sky_map) {
++    const nw = D.new_objects || [];
++    html += `<div class="sbh">NEW objects · ${nw.length}</div>` + (nw.length ? '<table><tr><th>Object</th><th>Class</th><th>First seen (UTC)</th><th>What it looks like</th></tr>' +
++      nw.map(o => `<tr class="pick" data-id="${esc(o.object)}"><td class="new">${esc(o.id)}</td><td>${esc(o.class)}</td><td>${esc(o.first_seen_utc)}</td><td>${esc(o.description || '')}</td></tr>`).join('') + '</table>' +
++      '<div class="dim" style="margin-top:4px">Click one to show it in the images and track it.</div>'
++      : '<div class="dim">None in these images: every source SPHEREx detects here is a known star, asteroid, comet or planet.</div>') +
++      (D.new_outside ? `<div class="dim" style="margin-top:4px">${D.new_outside} more just outside this patch: make the patch larger ("Go to sky coordinates" → Advanced) to see ${D.new_outside === 1 ? 'it' : 'them'}.</div>` : '');
++  }
++  $('tlDb').innerHTML = html;
++  for (const tr of $('tlDb').querySelectorAll('tr.pick')) tr.onclick = () => {           // show it where it was first seen
++    const O = S.objects[tr.dataset.id]; if (!O) return; tlPlay(false); tlFrame(O.frames[0] - 1); tlSelect(tr.dataset.id); };
++}
++const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>', ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
++function tlPlay(on) {
++  tl.playing = on; clearInterval(tl.timer); tl.timer = on && tl.frames.length > 1 ? setInterval(() => tlFrame(tl.i + 1), 1000/tl.fps) : null;
++  $('tlPlay').innerHTML = on ? ICON_PAUSE : ICON_PLAY; $('tlPlay').setAttribute('aria-label', on ? 'Pause' : 'Play');
++}
++function tlKeys(e) {                                            // the player's keys while the popup is open (from app.js)
++  if ($('tlPlayer').hidden || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName) || (e.target.tagName === 'BUTTON' && e.key === ' ')) return false;
++  const n = tl.frames.length, go = i => { tlPlay(false); tlFrame(i); };
++  if (e.key === 'ArrowRight') go(tl.i + 1); else if (e.key === 'ArrowLeft') go(tl.i - 1);
++  else if (e.key === 'Home') go(0); else if (e.key === 'End') go(n - 1);
++  else if (e.key === ' ') tlPlay(!tl.playing); else return false;
++  e.preventDefault(); return true;
++}
++function tlInit() {                                             // called once from app.js
++  $('tlPlay').onclick = () => tlPlay(!tl.playing);
++  $('tlFirst').onclick = () => { tlPlay(false); tlFrame(0); }; $('tlLast').onclick = () => { tlPlay(false); tlFrame(tl.frames.length - 1); };
++  $('tlPrev').onclick = () => { tlPlay(false); tlFrame(tl.i - 1); }; $('tlNext').onclick = () => { tlPlay(false); tlFrame(tl.i + 1); };
++  $('tlSpeed').onchange = () => { tl.fps = 2*+$('tlSpeed').value; if (tl.playing) tlPlay(true); };
++  $('tlTipNext').onclick = () => { tlTipShow(tl.tip + 1); tlTips(true); };
++  $('anaMin').onclick = $('tlMinBtn').onclick = minimizeAnalysis;
++  $('anaMiniOpen').onclick = restoreAnalysis; $('anaMiniX').onclick = closeAnalysis;
++  $('tlSlide').oninput = () => { tlPlay(false); tlFrame(+$('tlSlide').value); };
++  $('tlCount').onchange = $('tlRetry').onclick = () => { tlTimeHint(); requestAnalysis(tl.payload || anaPayloadNow); };
++  tlTimeHint();
++  $('tlSvg').onclick = tlClick;
++  $('tlMapOn').onchange = () => { $('tlMapKey').hidden = !$('tlMapOn').checked; tlDraw(); };
++}
+ let anaPayloadNow = null;
+ // When will SPHEREx be able to see direction d? Behind Earth: step SPHEREx around its orbit minute by minute.
+ // Too close to the Sun: step the Sun along Earth's orbit day by day (JPL mean elements) until it is 91 deg away.
+@@ -114,9 +382,72 @@ function drawClickMark() {                                     // brief feedback
+   if (!clickMark.ok) { ctx.beginPath(); ctx.moveTo(q[0] - 7, q[1] - 7); ctx.lineTo(q[0] + 7, q[1] + 7); ctx.moveTo(q[0] + 7, q[1] - 7); ctx.lineTo(q[0] - 7, q[1] + 7); ctx.stroke(); }
+   ctx.globalAlpha = 1;
+ }
+-function openAnalysis(x, y) { if (state && sky) openAnalysisDir(skyDirAt(x, y), null, patchHW()); }
+-let anaReq = 0;
+-function openAnalysisDir(dir, T, hw) {
++function openAnalysis(x, y) {
++  if (!state || !sky) return;
++  const A = analysedAt(x, y);                                  // double-click on an analysed patch: open that analysis again
++  if (A) openSaved(A); else openAnalysisDir(skyDirAt(x, y), null, patchHW());
++}
++// ---- where SPHEREx images have been analysed: every finished analysis projected on the sky (layer "Analysed patches")
++let analysed = [], analysedSpots = [];
++async function loadAnalysed() {
++  try { analysed = (await api('/api/analyses')).analyses || []; } catch (e) { analysed = []; }
++  $('cAnalysedN').textContent = analysed.length ? `(${analysed.length})` : '';
++}
++const eqDir = (ra, dec) => eq2ecl(ra*D2R, dec*D2R);
++function drawAnalysed() {
++  analysedSpots = [];
++  if (!opt.cAnalysed || !analysed.length) return;
++  const SK = skyScale(), col = '#5fe0a0', font = '11px system-ui', rects = [];
++  ctx.save(); ctx.lineWidth = 1.4; ctx.font = font;
++  for (const A of analysed) {
++    const hw = A.patch_px*A.pixel_arcsec/3600/2, at = (ra, dec) => skyXY(toView(eqDir(ra, dec)), SK);
++    let q = at(A.ra_deg, A.dec_deg), half = 6;
++    if (A.moving && A.path && A.path.length > 1) {            // a moving object: the path its images followed
++      ctx.strokeStyle = col; ctx.setLineDash([5, 4]); ctx.beginPath(); let on = false;
++      for (const [ra, dec] of A.path) { const p = at(ra, dec); if (!p) { on = false; continue; } on ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); on = true; }
++      ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = col;
++      for (const [ra, dec] of A.path) { const p = at(ra, dec); if (p) { ctx.beginPath(); ctx.arc(p[0], p[1], 2.6, 0, 7); ctx.fill(); } }
++    } else if (q) {                                            // a patch: its real size on the sky (at least a few pixels)
++      half = Math.max(4, hw*D2R*SK);
++      ctx.fillStyle = col + '26'; ctx.fillRect(q[0] - half, q[1] - half, 2*half, 2*half);
++      ctx.strokeStyle = col; ctx.strokeRect(q[0] - half, q[1] - half, 2*half, 2*half);
++    }
++    if (!q || q[0] < -50 || q[0] > W + 50 || q[1] < -50 || q[1] > H + 50) continue;
++    const label = `${A.tracking || A.name} · ${A.n_frames} image${A.n_frames === 1 ? '' : 's'}`, w = measure(font, label);
++    for (const [lx, ly] of [[q[0] + half + 5, q[1] - half + 9], [q[0] + half + 5, q[1] + half + 12], [q[0] - half - 5 - w, q[1] - half + 9]]) {
++      const r = [lx, ly - 11, lx + w, ly + 3]; if (hitsRect(r, rects)) continue;
++      rects.push(r); ctx.fillStyle = '#02040acc'; ctx.fillRect(lx - 3, ly - 12, w + 6, 16); ctx.fillStyle = col; ctx.fillText(label, lx, ly); break;
++    }
++    analysedSpots.push({A, x: q[0], y: q[1], r: half + 6});
++    const span = A.first_utc ? (A.first_utc.slice(0, 10) + (A.last_utc && A.last_utc.slice(0, 10) !== A.first_utc.slice(0, 10) ? ' → ' + A.last_utc.slice(0, 10) : '')) : '—';
++    addHit(q[0], q[1], half + 6, 0.65, () => tipHTML(esc(A.tracking || A.name), A.tracking ? 'tracked with XARVIS' : 'analysed with XARVIS',
++      [['SPHEREx images', `${A.n_frames}` + (A.images_available ? ` of ${A.images_available}` : '')], ['Imaged', span],
++       ['Patch', `${A.patch_px} × ${A.patch_px} px (${(A.patch_px*A.pixel_arcsec/60).toFixed(1)}′)`], ...(A.moving ? [['Motion', 'moving: the line is the path its images followed']] : []),
++       ['NEW objects in the images', String(A.new_objects)]],
++      'Double-click it to open this analysis again (the images show when SPHEREx can see it on the date shown).'));
++  }
++  ctx.restore();
++}
++function analysedAt(x, y) {                                    // the analysed patch under the cursor, nearest first
++  if (!opt.cAnalysed) return null; let best = null, bd = 1e9;
++  for (const s of analysedSpots) { const d = Math.max(Math.abs(x - s.x), Math.abs(y - s.y)); if (d <= s.r && d < bd) { bd = d; best = s.A; } }
++  return best;
++}
++function openSaved(A) {                                       // the popup for a finished analysis, asking for exactly its request (so it is reused, not run again)
++  const R = A.request, count = R.max_images == null ? 'all' : String(R.max_images);
++  if ([...$('tlCount').options].some(o => o.value === count)) { $('tlCount').value = count; tlTimeHint(); }
++  const S = R.star, known = S && targets.find(t => String(t.gaia_dr3) === String(S.gaia_dr3));   // a test target: its own entry
++  const T = known || {name: S ? S.name : `RA ${fmtRA(R.ra_deg, false)} · Dec ${fmtDec(R.dec_deg, false)}`, ra: R.ra_deg, dec: R.dec_deg, typed: true, source: 'saved XARVIS analysis'};
++  openAnalysisDir(eqDir(R.ra_deg, R.dec_deg), T, R.patch_px*SPHEREX_PIX/3600/2, A);
++}
++function savedPayload(P, A) {
++  const R = A.request, S = R.star;
++  const base = {...P, target: {...P.target, ra_deg: R.ra_deg, dec_deg: R.dec_deg},
++    named_target: S ? {name: S.name, source: 'ESA Gaia DR3', gaia_dr3: S.gaia_dr3, ra_deg_at_epoch: S.ra, dec_deg_at_epoch: S.dec, epoch: S.epoch, pmra_mas_yr: S.pmra, pmdec_mas_yr: S.pmdec, parallax_mas: S.parallax} : null};
++  if (!R.track) return base;
++  tl.base = base; return {...base, track: R.track};             // a tracked object: "Back to the patch" goes to the patch it was picked in
++}
++function openAnalysisDir(dir, T, hw, saved = null) {
+   if (!state || !sky) return;
+   const P = anaPayloadNow = analysisPayload(dir, T, hw), t = P.target;
+   setText('anaTitle', T ? T.name : `RA ${fmtRA(t.ra_deg, false)} · Dec ${fmtDec(t.dec_deg, false)}`);
+@@ -127,10 +458,8 @@ function openAnalysisDir(dir, T, hw) {
+                 ['Angle from the Sun', t.sun_elongation_deg.toFixed(1) + '°'], ['Can SPHEREx see it now?', t.spherex_visibility.visible_now ? 'yes' : 'no · ' + t.spherex_visibility.reason], ['Patch', P.patch.size.replace(' x ', '′ × ').replace(' arcmin', '′')]];
+   $('anaRows').innerHTML = rows.map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+   // the named target: who measured it and how far it moves during the SPHEREx survey
+-  let trk = null;
+   if (T && T.pmra != null) {
+     const pm = Math.hypot(T.pmra, T.pmdec)/1000, yrs = (SCIENCE_END - SCIENCE_START)/365.25, mv = pm*yrs;
+-    trk = SURVEY_EPOCHS.map(jd => [jd, targetEqAt(T, jd)]); trk.now = targetEqAt(T, sim.jd);
+     $('anaTarget').innerHTML = [['Catalogue', `ESA Gaia DR3 ${esc(T.gaia_dr3)} · G = ${T.g.toFixed(2)}`], ['Note', esc(T.note || '')], ['Proper motion', pm.toFixed(3) + '″ per year'],
+       ['Distance', T.parallax > 0 ? (1000/T.parallax).toFixed(T.parallax > 100 ? 2 : 0) + ' pc · ' + (3261.56/T.parallax).toFixed(T.parallax > 100 ? 2 : 0) + ' light-years' : '—'],
+       ['Moves during the SPHEREx survey', `${mv.toFixed(1)}″ ≈ ${(mv/SPHEREX_PIX).toFixed(1)} SPHEREx pixels (6.15″)`]].map(r => `<div class="v"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+@@ -145,67 +474,19 @@ function openAnalysisDir(dir, T, hw) {
+     : `<b>✕ Outside SPHEREx's view right now</b><span>${vis.behind_earth && vis.sun_limit_ok ? 'Earth is in the way at this moment.' : `It is only ${t.sun_elongation_deg.toFixed(0)}° from the Sun; SPHEREx never points closer than 91°.`} ${nx || ''}</span>`;
+   const inSpan = inDataSpan(sim.jd);
+   $('anaViz').hidden = !vis.visible_now || !inSpan;          // no image box outside SPHEREx's view or outside the dates it has data for
++  $('ana').classList.toggle('noviz', $('anaViz').hidden);      // then the data alone, in one column
++  $('anaMini').hidden = true;                                  // (a new point replaces a minimized analysis)
+   if (!inSpan) $('anaVis').innerHTML += `<span class="span">No SPHEREx images exist for this date: its data run from ${utc(DATA_FIRST)} to ${utc(dataLatest())}. Use “Jump to…” in the time bar to go there.</span>`;
+   else if (sim.jd > nowJD() - 60) $('anaVis').innerHTML += '<span class="span">Images from the last 60 days may not be released by IRSA yet.</span>';
+   P.target.spherex_next_visible = nx;
+   $('anaJSON').textContent = JSON.stringify(P, null, 2);
+   $('anaBack').hidden = false; $('ana').scrollTop = 0; $('anaPayload').open = false; $('anaClose').focus({preventScroll: true});
+   clickMark = {dir, ok: vis.visible_now, t: performance.now()};
+-  drawPatchMap(t.ra_deg, t.dec_deg, hw, trk, null);
+-  // known asteroids and comets in the patch on this date (NASA/JPL SB Ident)
+-  const id = ++anaReq;
+-  $('anaSB').innerHTML = '<div class="sbh">Known asteroids and comets in the patch</div><div class="dim">Asking NASA/JPL…</div>';
+-  fetch(`/api/sbident?ra=${t.ra_deg}&dec=${t.dec_deg}&jd=${sim.jd}&hw=${hw}`).then(r => r.json()).then(d => {
+-    if (id !== anaReq) return;
+-    if (d.error) { sbFailed(); return; }
+-    P.known_small_bodies = {count: d.count, time_utc: d.time_utc, source: d.source, objects: d.objects}; $('anaJSON').textContent = JSON.stringify(P, null, 2);
+-    drawPatchMap(t.ra_deg, t.dec_deg, hw, trk, d.objects);
+-    $('anaSB').innerHTML = `<div class="sbh">Known asteroids and comets in the patch · ${d.count}</div>` + (d.count ? `<table><tr><th>Object</th><th>V mag</th><th>Offset E, N</th><th>Motion</th></tr>` +
+-      d.objects.slice(0, 15).map(o => `<tr><td>${esc(o.name)}</td><td>${o.v == null ? '—' : o.v.toFixed(1)}</td><td>${o.east_arcmin.toFixed(1)}′, ${o.north_arcmin.toFixed(1)}′</td><td>${o.rate_ra_arcsec_h == null ? '—' : Math.hypot(o.rate_ra_arcsec_h, o.rate_dec_arcsec_h).toFixed(0) + '″/h'}</td></tr>`).join('') + '</table>' +
+-      (d.count > 15 ? `<div class="dim" style="margin-top:4px">and ${d.count - 15} fainter (all in the backend data)</div>` : '') : '<div class="dim">None on this date.</div>') +
+-      `<div class="dim" style="margin-top:4px">${esc(d.source)}, seen from Earth's centre at ${esc(d.time_utc)} UTC.</div>`;
+-  }).catch(() => { if (id === anaReq) sbFailed(); });
+-  // NASA/JPL (or our server) did not answer: leave the section out entirely rather than show an error
+-  function sbFailed() { $('anaSB').innerHTML = ''; drawPatchMap(t.ra_deg, t.dec_deg, hw, trk, []); }
+-  requestAnalysis(P);                                         // placeholder: returns null for now
+-}
+-// The patch as a little map (gnomonic, north up, east left like a sky image): the target's predicted positions at the
+-// SPHEREx survey dates (ESA Gaia proper motion) and the known asteroids and comets with their motion over 2 hours (NASA/JPL).
++  requestAnalysis(saved && !$('anaViz').hidden ? savedPayload(P, saved) : P);   // the SPHEREx image time-lapse (only when the image box is shown)
++}
+ // SPHEREx science data: from 1 May 2025 (start of the survey) to now, until the mission ends; IRSA releases each week's
+ // images within 60 days of observation (IPAC SPHEREx Explanatory Supplement, sec. 2.1-2.2).
+ const utc = jd => fmtDate(jd, false) + ' UTC';                     // 'YYYY-MM-DD hh:mm UTC'
+ const DATA_FIRST = 2460796.5, dataLatest = () => Math.min(nowJD(), 2461557.5), inDataSpan = jd => jd >= DATA_FIRST && jd <= dataLatest();
+-const SCIENCE_START = 2460796.5, SCIENCE_END = 2461557.5, SURVEY_EPOCHS = [0, 1, 2, 3, 4].map(i => SCIENCE_START + i*182.6).filter(jd => jd <= SCIENCE_END);
+-function drawPatchMap(ra0, dec0, hw, trk, objs) {
+-  const cvs = $('anaMap'), g = cvs.getContext('2d'), Wm = cvs.width, Hm = cvs.height, S = Math.min(Wm, Hm)*0.92/(2*hw*60);   // px per arcmin
+-  const a0 = ra0*D2R, d0 = dec0*D2R, c0 = [Math.cos(d0)*Math.cos(a0), Math.cos(d0)*Math.sin(a0), Math.sin(d0)], e = [-Math.sin(a0), Math.cos(a0), 0], n = cross(c0, e);
+-  const off = (ra, dec) => { const a = ra*D2R, d = dec*D2R, u = [Math.cos(d)*Math.cos(a), Math.cos(d)*Math.sin(a), Math.sin(d)], w = dot(u, c0); return [dot(u, e)/w/D2R*60, dot(u, n)/w/D2R*60]; };
+-  const X = x => Wm/2 - x*S, Y = y => Hm/2 - y*S;                                                  // east to the left
+-  g.clearRect(0, 0, Wm, Hm);
+-  const box = hw*60*S; g.strokeStyle = '#34436a'; g.lineWidth = 1; g.strokeRect(Wm/2 - box, Hm/2 - box, 2*box, 2*box);
+-  g.setLineDash([2, 4]); g.beginPath(); g.moveTo(Wm/2, Hm/2 - box); g.lineTo(Wm/2, Hm/2 + box); g.moveTo(Wm/2 - box, Hm/2); g.lineTo(Wm/2 + box, Hm/2); g.stroke(); g.setLineDash([]);
+-  g.font = '11px system-ui'; g.fillStyle = '#6c7a9c'; g.fillText((2*hw*60).toFixed(0) + '′', Wm/2 + box - 26, Hm/2 + box - 6);
+-  const pix = SPHEREX_PIX/60*S; if (pix >= 2) { g.strokeStyle = '#4a5f94'; g.strokeRect(Wm/2 - box + 8, Hm/2 + box - 8 - pix, pix, pix); g.fillText('1 SPHEREx pixel', Wm/2 - box + 12 + pix, Hm/2 + box - 9); }
+-  let leg = [];
+-  if (objs && objs.length) {
+-    for (const o of objs) { const [x, y] = [o.east_arcmin, o.north_arcmin], r = o.v == null ? 2 : clamp(5.5 - (o.v - 14)*0.45, 1.5, 5.5);
+-      g.fillStyle = '#e2a45f'; g.beginPath(); g.arc(X(x), Y(y), r, 0, 7); g.fill();
+-      if (o.rate_ra_arcsec_h != null) { const dx = o.rate_ra_arcsec_h*2/60, dy = o.rate_dec_arcsec_h*2/60; g.strokeStyle = '#e2a45f99'; g.beginPath(); g.moveTo(X(x), Y(y)); g.lineTo(X(x + dx), Y(y + dy)); g.stroke(); } }
+-    leg.push('<span style="color:#e2a45f">●</span> known asteroids/comets (line: motion over 2 hours)');
+-  }
+-  if (trk) {
+-    const pts = trk.map(([jd, [ra, dec]]) => [jd, off(ra, dec)]), span = Math.max(...pts.map(p => Math.hypot(p[1][0] - pts[0][1][0], p[1][1] - pts[0][1][1])));
+-    const zoom = span*S < 40 && span > 0 ? Math.min(400, 40/(span*S)) : 1;                         // too small to see: magnify the track around the centre
+-    const cx = pts[Math.floor(pts.length/2)][1];
+-    const P = q => [X(cx[0] + (q[0] - cx[0])*zoom), Y(cx[1] + (q[1] - cx[1])*zoom)];
+-    g.strokeStyle = '#5fd6f0'; g.lineWidth = 1.2; g.beginPath(); pts.forEach(([, q], i) => { const [x, y] = P(q); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+-    pts.forEach(([jd, q], i) => { const [x, y] = P(q); g.fillStyle = '#5fd6f0'; g.beginPath(); g.arc(x, y, 3.2, 0, 7); g.fill();
+-      if (i === 0 || i === pts.length - 1) { g.fillStyle = '#9fe6f7'; g.fillText(fmtDate(jd, false).slice(0, 7), x + 9, y + (i === 0 ? 12 : -6)); } });
+-    const [nx, ny] = P(off(...trk.now)); g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.beginPath(); g.arc(nx, ny, 7, 0, 7); g.stroke();
+-    leg.push('○ position on the date shown');
+-    leg.push('<span style="color:#5fd6f0">●</span> target at each 6-month SPHEREx sky survey (ESA Gaia proper motion)' + (zoom > 1 ? ` · track magnified ×${zoom.toFixed(0)}` : ''));
+-  } else { g.strokeStyle = '#5fd6f0'; g.lineWidth = 1.4; g.beginPath(); g.arc(Wm/2, Hm/2, 6, 0, 7); g.stroke(); leg.push('<span style="color:#5fd6f0">○</span> patch centre'); }
+-  if (objs === null) leg.push('asking NASA/JPL for known asteroids…');
+-  $('anaLegend').innerHTML = leg.join('<br>');
+-}
+-function closeAnalysis() { $('anaBack').hidden = true; }
++const SCIENCE_START = 2460796.5, SCIENCE_END = 2461557.5;
++function closeAnalysis() { $('anaBack').hidden = true; $('anaMini').hidden = true; tl.req++; tlReset(); tl.payload = tl.base = tl.sel = null; $('tlTrack').hidden = true; }   // stops the polling and the player; the server keeps finished results
+diff --git a/Test_Robert_Code_Folder/static/js/app.js b/Test_Robert_Code_Folder/static/js/app.js
+index 3d08bf9..4cd637b 100644
+--- a/Test_Robert_Code_Folder/static/js/app.js
++++ b/Test_Robert_Code_Folder/static/js/app.js
+@@ -146,11 +146,11 @@ function initUI() {
+   $('introGo').onclick = closeIntro;
+   $('intro').onclick = e => { if (e.target === $('intro')) closeIntro(); };
+   $('helpLink').onclick = e => { e.preventDefault(); $('introSkip').checked = introSeen; $('intro').hidden = false; $('intro').classList.remove('show'); requestAnimationFrame(() => requestAnimationFrame(() => $('intro').classList.add('show'))); $('introGo').focus(); };
+-  $('anaX').onclick = $('anaClose').onclick = closeAnalysis;
++  $('anaX').onclick = $('anaClose').onclick = closeAnalysis; tlInit();
+   $('anaBack').onclick = e => { if (e.target === $('anaBack')) closeAnalysis(); };
+   $('anaCopy').onclick = async () => { try { await navigator.clipboard.writeText(JSON.stringify(anaPayloadNow, null, 2)); $('anaCopy').textContent = 'Copied'; } catch (err) { $('anaCopy').textContent = 'Copy failed'; } };
+   cv.onpointerleave = () => { cursor = null; }; cv.oncontextmenu = e => e.preventDefault();
+-  addEventListener('keydown', e => { if (!$('intro').hidden) { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); $('introGo').click(); } return; } if (!$('anaBack').hidden) { if (e.key === 'Escape') closeAnalysis(); return; } if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; const st = 0.06;
++  addEventListener('keydown', e => { if (!$('intro').hidden) { if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); $('introGo').click(); } return; } if (!$('anaBack').hidden) { if (e.key === 'Escape') closeAnalysis(); else tlKeys(e); return; } if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return; const st = 0.06;
+     if (e.key === 'q' || e.key === 'Q') rotateBy(0, 0, -st); else if (e.key === 'e' || e.key === 'E') rotateBy(0, 0, st);
+     else if (e.key === 'ArrowLeft') rotateBy(-st, 0, 0); else if (e.key === 'ArrowRight') rotateBy(st, 0, 0); else if (e.key === 'ArrowUp') rotateBy(0, -st, 0); else if (e.key === 'ArrowDown') rotateBy(0, st, 0);
+     else if (e.key === ' ') { e.preventDefault(); $('pause').click(); } else if (e.key === 'l' || e.key === 'L') $('live').click(); });
+@@ -161,8 +161,9 @@ function initUI() {
+ (async function boot() {
+   setTimeout(() => { const f = $('fade'); if (f) f.classList.add('gone'); }, 8000);   // never leave the page black if data is slow
+   resize(); initUI(); zt = ztGoal = tFit(); $('zoom').value = zt;
++  setJD(DATA_FIRST); sim.dir = 0;                              // open on the first day of SPHEREx data (paused, like "Jump to… First data")
+   try { meta = await api('/api/meta'); } catch (e) { console.warn('meta', e); meta = {launch_jd: 2460746.6325, science_start_jd: 2460796.5, science_end_jd: 2461557.5, ephemeris: 'unavailable', de_start_jd: null}; }
+-  loadSky(); loadSmallBodies(); loadTargets();
++  loadSky(); loadSmallBodies(); loadTargets(); loadAnalysed();
+   requestAnimationFrame(frame);
+ })();
+ // Debug hooks: inspect or drive the viewer from the browser console (e.g. XARVIS.setJD(2460796.5)); also used by tests
+diff --git a/Test_Robert_Code_Folder/static/js/core.js b/Test_Robert_Code_Folder/static/js/core.js
+index 094cb95..7d41ea5 100644
+--- a/Test_Robert_Code_Folder/static/js/core.js
++++ b/Test_Robert_Code_Folder/static/js/core.js
+@@ -29,7 +29,7 @@ const txt = {};
+ const setText = (id, v) => { if (txt[id] !== v) { txt[id] = v; $(id).textContent = v; } };
+ const setHTML = (id, v) => { if (txt[id] !== v) { txt[id] = v; $(id).innerHTML = v; } };
+ const opt = {};
+-for (const id of ['cStars','cLines','cOrbits','cBelts','cVisNow','cVisAll']) {
++for (const id of ['cStars','cLines','cOrbits','cBelts','cVisNow','cVisAll','cAnalysed']) {
+   opt[id] = $(id).checked; $(id).addEventListener('change', () => { opt[id] = $(id).checked; opt.cNames = opt.cLines; });
+ }
+ opt.cNames = opt.cLines;
+diff --git a/Test_Robert_Code_Folder/static/js/view3d.js b/Test_Robert_Code_Folder/static/js/view3d.js
+index 0a4112f..38e2f51 100644
+--- a/Test_Robert_Code_Folder/static/js/view3d.js
++++ b/Test_Robert_Code_Folder/static/js/view3d.js
+@@ -69,6 +69,7 @@ function draw3D() {
+   drawStarfield(0.75, fade);
+   drawVisibility();
+   drawSkyTarget();
++  drawAnalysed();
+   drawClickMark();
+   const E = state.E, sp = state.spherex, wAU = W/s, orbitA = smooth(0.004, 0.03, wAU);
+   drawRegions(c, s);
+diff --git a/Test_Robert_Code_Folder/templates/index.html b/Test_Robert_Code_Folder/templates/index.html
+index a197223..77a7747 100644
+--- a/Test_Robert_Code_Folder/templates/index.html
++++ b/Test_Robert_Code_Folder/templates/index.html
+@@ -65,6 +65,8 @@
+     <div class="grp">What SPHEREx can see</div>
+     <label title="Sky SPHEREx can point at right now: at least 91° from the Sun and not behind Earth"><input type="checkbox" id="cVisNow" checked><i class="sw now"></i>Visible now</label>
+     <label title="Sky allowed by the Sun limit (at least 91° from the Sun); Earth moves out of the way during each 98-minute orbit"><input type="checkbox" id="cVisAll"><i class="sw all"></i>Visible overall (Sun limit)</label>
++    <div class="grp">XARVIS analysis</div>
++    <label title="Every patch analysed with XARVIS, where SPHEREx imaged it (a moving object: the path its images followed). Double-click one to open it again"><input type="checkbox" id="cAnalysed" checked><i class="sw done"></i>Analysed patches <span id="cAnalysedN" class="dim"></span></label>
+   </div>
+ </div>
+ 
+@@ -115,28 +117,74 @@
+   </div>
+ </div>
+ 
+-<!-- double-click analysis popup: PLACEHOLDER. It collects the sky coordinates and shows what will be sent; the backend is not connected yet -->
++<!-- double-click analysis popup: the SPHEREx images of the patch on the left (static/js/analysis.js: requestAnalysis), the
++     data on the right. While the data comes from NASA a loading card shows the steps and tips; "Minimize" keeps it loading
++     in a small badge (bottom right) that shows a check mark when the images are ready. -->
+ <div id="anaBack" hidden>
+   <div class="card" id="ana" role="dialog" aria-modal="true" aria-labelledby="anaTitle">
+     <div class="anaHead">
+       <div><div class="h">Sky point analysis</div><div id="anaTitle">…</div></div>
+-      <button class="ghost" id="anaX" title="Close (Esc)">✕</button>
++      <div class="anaHeadBtns"><button class="ghost" id="anaMin" title="Minimize: keep loading in the background" aria-label="Minimize">–</button><button class="ghost" id="anaX" title="Close (Esc)" aria-label="Close">✕</button></div>
+     </div>
+-    <div id="anaVis"></div>
+-    <div id="anaRows"></div>
+-    <div id="anaTarget"></div>
+-    <div id="anaViz">
+-      <div class="vh"><span id="anaVizTitle">The patch on this date</span><span class="dim">N ↑ · E ←</span></div>
+-      <canvas id="anaMap" width="440" height="300"></canvas>
+-      <div id="anaLegend" class="dim"></div>
+-      <div class="ph">SPHEREx image time-lapse: coming soon</div>
+-      <div class="dim">The SPHEREx images of this patch will play here as a little video once XARVIS is connected to NASA/IPAC IRSA. The map above shows what to look for: the predicted motion of the target (ESA Gaia) and the known asteroids and comets in the patch (NASA/JPL).</div>
++    <div class="anaBody">
++      <section id="anaViz" class="anaLeft" aria-label="SPHEREx images">
++        <div id="tl">
++          <div class="tlHead"><span class="ph">SPHEREx image time-lapse</span>
++            <label class="dim" for="tlCount">Images <select id="tlCount" title="How many SPHEREx images to load, spread over all its survey dates">
++              <option value="8">8</option><option value="24" selected>24</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="all">All</option></select></label></div>
++          <div id="tlTime" class="dim">A new analysis can take up to about a minute for low image counts (8 to 50) and up to about 3 minutes for high counts (100 or more).</div>
++          <div id="tlTrack" hidden></div>
++          <div id="tlLoad" hidden role="status" aria-live="polite">
++            <div class="lc">
++              <div class="lcTop"><div class="spin" aria-hidden="true"></div><div><b id="tlLoadTitle">Collecting SPHEREx data from NASA</b><div class="dim small">NASA/IPAC IRSA archive · ESA Gaia · NASA/JPL</div></div></div>
++              <div id="tlLoadTime" class="small"></div>
++              <ol id="tlSteps"><li>Search the SPHEREx archive</li><li>Download and measure the images</li><li>Compare with the catalogs and map the sky</li><li>Make the images</li><li>Load them here</li></ol>
++              <div id="tlBar"><i id="tlFill"></i></div>
++              <div id="tlMsg" class="dim"></div>
++              <div class="tipBox"><div class="tipHead"><b>Tip</b><button id="tlTipNext" class="ghost" title="Next tip">Next ›</button></div><div id="tlTip"></div></div>
++              <button id="tlMinBtn">Minimize · keep loading in the background</button>
++            </div>
++          </div>
++          <div id="tlErr" hidden role="alert"><div id="tlErrMsg"></div><button id="tlRetry">Try again</button></div>
++          <div id="tlPlayer" hidden>
++            <div id="tlTitle"></div>
++            <div id="tlView"><img id="tlImg" alt="SPHEREx image of the patch"><svg id="tlSvg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Objects found in this image"></svg></div>
++            <div class="tlCtl" role="group" aria-label="Time-lapse controls">
++              <button id="tlFirst" class="ic" title="First image (Home)" aria-label="First image"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM19 5v14L9 12z"/></svg></button>
++              <button id="tlPrev" class="ic" title="Previous image (←)" aria-label="Previous image"><svg viewBox="0 0 24 24"><path d="M16 5v14L5 12z"/></svg></button>
++              <button id="tlPlay" class="ic play" title="Play / pause (Space)" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
++              <button id="tlNext" class="ic" title="Next image (→)" aria-label="Next image"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
++              <button id="tlLast" class="ic" title="Last image (End)" aria-label="Last image"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM5 5v14l10-7z"/></svg></button>
++              <input type="range" id="tlSlide" min="0" max="0" step="1" value="0" aria-label="Frame">
++              <span id="tlNum" class="dim"></span>
++              <select id="tlSpeed" title="Playback speed" aria-label="Playback speed"><option value="1">0.5×</option><option value="2" selected>1×</option><option value="4">2×</option><option value="8">4×</option></select>
++            </div>
++            <div id="tlKey"></div>
++            <div id="tlDisclaimer" role="note"><b>About these images.</b> They have slight display enhancements: colour from two wavelengths, sharpening and upscaling (the measurements use the original pixels). They can show artefacts such as detector ghosts, cosmic-ray hits, edge effects and halos around bright stars. The automatic detection (the sky map, NEW objects and tracking) can make mistakes, so check a result before drawing conclusions from it.</div>
++            <div id="tlMapBar"><label><input type="checkbox" id="tlMapOn" checked> Sky map</label><span id="tlMapText" class="dim"></span></div>
++            <div id="tlMapKey" class="dim"><span><b class="mk new">○</b>NEW object (in no catalog)</span><span><b class="mk named">★</b>named star</span><span><b class="mk gaia">+</b>Gaia DR3</span><span><b class="mk catwise">×</b>CatWISE only</span><span><b class="mk sb">◇</b>known asteroid / comet</span><span><b class="mk planet">◇</b>planet / Moon</span><span><b class="mk art">□</b>flagged artifact</span></div>
++          </div>
++        </div>
++      </section>
++      <section class="anaRight" aria-label="Data">
++        <div id="anaVis"></div>
++        <div id="anaRows"></div>
++        <div id="anaTarget"></div>
++        <div id="tlData" hidden>
++          <div id="tlSel"></div>
++          <div class="sbh">This image</div>
++          <div id="tlInfo"></div>
++          <div id="tlDb"></div>
++          <div id="tlNote" class="dim"></div>
++        </div>
++        <details id="anaPayload"><summary>Data passed to the backend</summary><pre id="anaJSON"></pre></details>
++      </section>
+     </div>
+-    <div id="anaSB"></div>
+-    <details id="anaPayload"><summary>Data passed to the backend</summary><pre id="anaJSON"></pre></details>
+     <div class="row anaBtns"><button id="anaCopy">Copy coordinates</button><button id="anaClose" class="primary">Close</button></div>
+   </div>
+ </div>
++<!-- the minimized analysis: a spinner while it loads, a check mark when the images are ready; click to open it again -->
++<div id="anaMini" hidden><button id="anaMiniOpen" title="Open the analysis"><span id="anaMiniIcon" class="spin" aria-hidden="true"></span><span><b id="anaMiniTitle">SPHEREx analysis</b><span id="anaMiniText" class="dim"></span></span></button><button id="anaMiniX" class="ghost" title="Cancel and close" aria-label="Cancel and close">✕</button></div>
+ <div id="perf"></div>
+ 
+ <script src="{{ asset('js/core.js') }}"></script>
+diff --git a/config.json b/config.json
+index 04ecd25..f7d0801 100644
+--- a/config.json
++++ b/config.json
+@@ -13,6 +13,7 @@
+   "ISOLATION_RADIUS": 18,
+   "ISOLATION_MAX_FRACTION": 0.15,
+   "MAX_IMAGES": null,
++  "SPREAD_IMAGES": false,
+   "ZOOM_ONLY": true,
+   "PRETTY_IMAGES": true,
+   "DISPLAY_UPSCALE": 8,
+@@ -32,6 +33,8 @@
+   "CUTOUT_SIZE": 5.5,
+   "APERTURE_RADIUS_PIX": 2.0,
+   "ANNULUS_PIX": [4.0, 6.5],
++  "USE_PSF": true,
++  "VISIT_GAP_DAYS": 30,
+   "SEARCH_RADIUS_PIX": 3,
+   "TRACK_TOLERANCE_PIX": 1.5,
+   "TRACK_MIN_SIGMA": 4,
+@@ -78,6 +81,7 @@
+   "MAX_WAIT_SECONDS": 5,
+   "REQUEST_TIMEOUT": 30,
+   "MAX_CONCURRENT_DOWNLOADS": 16,
++  "MEASURE_WORKERS": 0,
+   "COLLECTIONS": ["spherex_dr1", "spherex_qr3"],
+   "GATOR_URL": "https://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query",
+   "SIA_URL": "https://irsa.ipac.caltech.edu/SIA",
+diff --git a/requirements.txt b/requirements.txt
+index 364040b..762d209 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -18,6 +18,7 @@ jaraco.classes==3.4.0
+ jaraco.context==6.1.2
+ jaraco.functools==4.6.0
+ Jinja2==3.1.6
++jplephem==2.24
+ keyring==25.7.0
+ kiwisolver==1.5.1
+ MarkupSafe==3.0.4
+diff --git a/run_web.py b/run_web.py
+new file mode 100644
+index 0000000..b68c61f
+--- /dev/null
++++ b/run_web.py
+@@ -0,0 +1,22 @@
++"""Start the XARVIS website with the SPHEREx image pipeline connected:
++
++    python run_web.py            then open http://127.0.0.1:5000
++
++Works from any folder: the paths are taken from this file's location. The website is Test_Robert_Code_Folder/app.py;
++the pipeline (Jonah_Code_File) is imported as a package from this folder. The desktop app is unchanged:
++python -m Jonah_Code_File
++"""
++import os
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent
++os.environ.setdefault("MPLBACKEND", "Agg")                # the web server never opens matplotlib windows
++for folder in (ROOT, ROOT / "Test_Robert_Code_Folder"):
++    if str(folder) not in sys.path:
++        sys.path.insert(0, str(folder))
++
++from app import main                                       # noqa: E402  (Test_Robert_Code_Folder/app.py)
++
++if __name__ == "__main__":
++    main()
+diff --git a/test_web_integration.py b/test_web_integration.py
+new file mode 100644
+index 0000000..a2b392f
+--- /dev/null
++++ b/test_web_integration.py
+@@ -0,0 +1,573 @@
++"""Tests of the website <-> pipeline bridge. From the Xarvis folder:
++
++    python -m unittest test_web_integration                 offline (no internet needed)
++    XARVIS_ONLINE=1 python -m unittest test_web_integration   also one real run against NASA/IPAC IRSA
++        (PowerShell:  $env:XARVIS_ONLINE=1; python -m unittest test_web_integration)
++"""
++import json
++import os
++import sys
++import tempfile
++import time
++import unittest
++from pathlib import Path
++from unittest import mock
++
++ROOT = Path(__file__).resolve().parent
++os.environ.setdefault('MPLBACKEND', 'Agg')
++for _folder in (ROOT, ROOT / 'Test_Robert_Code_Folder'):
++    if str(_folder) not in sys.path:
++        sys.path.insert(0, str(_folder))
++
++import numpy as np
++from astropy.io import fits
++from astropy.table import Table
++from astropy.wcs import WCS
++from PIL import Image
++
++import analysis_jobs
++from app import app
++from Jonah_Code_File import config as cfg
++from Jonah_Code_File import main as pipeline
++from Jonah_Code_File import stars, web
++from Jonah_Code_File.api import settings_override
++
++PAYLOAD = {'request': 'sky_point_analysis', 'version': 1,
++           'time': {'utc': '2025-11-01 00:00 UTC', 'jd_utc': 2460980.5, 'simulated': True},
++           'target': {'ra_deg': 133.795129, 'dec_deg': -7.245147},
++           'patch': {'half_width_deg': 50 * 6.15 / 3600 / 2, 'size': '5 x 5 arcmin'},
++           'named_target': None, 'spherex': {'altitude_km': 650.0}}
++BARNARD = {'name': "Barnard's Star", 'source': 'ESA Gaia DR3', 'gaia_dr3': '4472832130942575872',
++           'ra_deg_at_epoch': 269.448503, 'dec_deg_at_epoch': 4.739420, 'epoch': 2016.0,
++           'pmra_mas_yr': -801.551, 'pmdec_mas_yr': 10362.394, 'parallax_mas': 546.976, 'gaia_g_mag': 8.19}
++
++
++def web_job(request):
++    return analysis_jobs.job_id(request)
++
++
++def wait_for(client, job, seconds=30):
++    for _ in range(int(seconds * 20)):
++        state = client.get(f'/api/analysis/{job}').get_json()
++        if state['status'] in ('done', 'error'):
++            return state
++        time.sleep(0.05)
++    raise AssertionError(f'job still {state["status"]} after {seconds} s')
++
++
++def fake_zoom(mjd, detector, rotation_deg=0.0, star_east_px=0.0, size=60, star_peak=4.0):
++    """A SPHEREx-like cutout (6.15" pixels, rotated by rotation_deg) with the target at the centre and one star
++    `star_east_px` pixels EAST of it on the sky."""
++    w = WCS(naxis=2)
++    w.wcs.ctype = ['RA---TAN', 'DEC--TAN']
++    w.wcs.crval = [133.8, -7.2]
++    w.wcs.crpix = [size / 2 + 1, size / 2 + 1]                       # FITS counts from 1: 0-based pixel size/2
++    c, s = np.cos(np.radians(rotation_deg)), np.sin(np.radians(rotation_deg))
++    scale = 6.15 / 3600
++    w.wcs.cd = np.array([[-scale * c, scale * s], [scale * s, scale * c]])
++    centre = (size / 2, size / 2)                                    # 0-based pixel of crval
++    ra = 133.8 + star_east_px * scale / np.cos(np.radians(-7.2))
++    sx, sy = w.world_to_pixel_values(ra, -7.2)
++    yy, xx = np.indices((size, size))
++    rng = np.random.default_rng(int(mjd * 10))
++    image = 5 + rng.normal(0, 0.05, (size, size)) + star_peak * np.exp(-((xx - sx) ** 2 + (yy - sy) ** 2) / 2)
++    header = fits.Header()
++    header['MSKN00'] = 'TRANSIENT'
++    header['MSKN07'] = 'HOT'
++    flags = np.zeros((size, size), np.int32)
++    flags[int(centre[1]), int(centre[0])] = 1 << 7                   # a HOT pixel on the target
++    return {'image': image, 'variance': np.full((size, size), 0.0025), 'bad': np.zeros((size, size), bool),
++            'flags': flags, 'flags_header': header, 'wcs': w, 'catalog_xy': centre, 'mjd': mjd,
++            'detector': detector, 'wavelength_um': 0.9 + detector / 2, 'snr': 12.5, 'flux_mjy': 1.0,
++            'flux_err_mjy': 0.1, 'n_bad_in_aperture': 1, 'saturated': False, 'track': 'ok', 'astrometry_ok': True,
++            'obs_id': f'fake_{mjd}', 'object_found': True, 'object_ra': 133.8, 'object_dec': -7.2,
++            'expected_ra': 133.8, 'expected_dec': -7.2, 'date_obs': '2025-05-05T00:00:00'}
++
++
++def fake_analyse(request, folder, on_progress=None):
++    """Stands in for the pipeline run (no internet): two fake frames through the real image and summary code."""
++    folder = Path(folder)
++    folder.mkdir(parents=True, exist_ok=True)
++    zooms = [fake_zoom(60800.0, 1), fake_zoom(60990.5, 3, rotation_deg=90.0)]
++    if on_progress:
++        on_progress(1, 2, 'Downloading and measuring SPHEREx images: 1 of 2')
++    results = {'tracked': {'name': 'fake target', 'images_available': 40}, 'frames': zooms, 'zooms': zooms}
++    summary = web.summary_of(results, request, web.write_frames(zooms, folder, request['patch_px']))
++    (folder / 'summary.json').write_text(json.dumps(summary), encoding='utf-8')
++    return summary
++
++
++class Request(unittest.TestCase):
++    """The popup's payload -> the pipeline's inputs."""
++
++    def test_coordinates(self):
++        request = web.web_request(PAYLOAD)
++        self.assertEqual(request, {'ra_deg': 133.795129, 'dec_deg': -7.245147, 'patch_px': 50,
++                                   'max_images': web.DEFAULT_MAX_IMAGES, 'star': None})
++        star = web.pipeline_star(request)
++        self.assertEqual((star['ra'], star['dec'], star['pmra'], star['pmdec']), (133.795129, -7.245147, 0.0, 0.0))
++        self.assertNotIn('epoch_mjd', star)
++
++    def test_number_of_images(self):
++        self.assertEqual(web.web_request({**PAYLOAD, 'max_images': 8})['max_images'], 8)
++        self.assertIsNone(web.web_request({**PAYLOAD, 'max_images': None})['max_images'])
++        self.assertIsNone(web.web_request({**PAYLOAD, 'max_images': 'all'})['max_images'])
++        for bad in (0, -3, 'many', web.MAX_IMAGES_LIMIT + 1):
++            with self.assertRaises(ValueError):
++                web.web_request({**PAYLOAD, 'max_images': bad})
++
++    def test_patch_size_is_limited(self):
++        wide = {**PAYLOAD, 'patch': {'half_width_deg': 2000 * 6.15 / 3600 / 2}}
++        self.assertEqual(web.web_request(wide)['patch_px'], web.PATCH_PX_LIMITS[1])
++        settings = web.run_settings(web.web_request(wide))
++        self.assertGreaterEqual(settings['ZOOM_SIZE_PIX'], 400 * np.sqrt(2))       # filled at any rotation
++        self.assertGreaterEqual(settings['CUTOUT_SIZE'] * 60, settings['ZOOM_SIZE_PIX'] * 6.15)   # the cutout covers it
++        for request in (web.web_request(PAYLOAD), web.web_request(wide)):          # the catalogs cover the zoom's corners
++            settings = web.run_settings(request)
++            self.assertGreaterEqual(settings['FIELD_RADIUS'] * 60, settings['ZOOM_SIZE_PIX'] / 2 * np.sqrt(2) * 6.15)
++        self.assertEqual(web.run_settings(web.web_request(PAYLOAD))['ZOOM_SIZE_PIX'], 75)
++
++    def test_bad_input(self):
++        for bad in (None, [], {}, {'target': {'ra_deg': 10}, 'patch': {'half_width_deg': 0.04}},
++                    {**PAYLOAD, 'target': {'ra_deg': 400, 'dec_deg': 0}},
++                    {**PAYLOAD, 'target': {'ra_deg': 10, 'dec_deg': 'north'}},
++                    {**PAYLOAD, 'target': {'ra_deg': float('nan'), 'dec_deg': 0}},
++                    {**PAYLOAD, 'patch': {}}):
++            with self.assertRaises(ValueError):
++                web.web_request(bad)
++
++    def test_gaia_star_keeps_its_epoch(self):
++        request = web.web_request({**PAYLOAD, 'named_target': BARNARD})
++        star = web.pipeline_star(request)
++        self.assertAlmostEqual(star['epoch_mjd'], 57388.5, places=3)                # J2016.0
++        ra, dec = stars.positions_at({**star, 'parallax': None}, star['epoch_mjd'])
++        self.assertAlmostEqual(ra[0], BARNARD['ra_deg_at_epoch'], places=7)         # at its epoch: the catalog position
++        self.assertAlmostEqual(dec[0], BARNARD['dec_deg_at_epoch'], places=7)
++        _, later = stars.positions_at({**star, 'parallax': None}, star['epoch_mjd'] + 10 * 365.25)
++        self.assertAlmostEqual((later[0] - BARNARD['dec_deg_at_epoch']) * 3600, 103.62, delta=0.05)   # 10.36"/yr north
++        # the same star WITHOUT the epoch would be moved from J2000: 16 years (166") too far - the bug this prevents
++        _, wrong = stars.positions_at({**star, 'parallax': None, 'epoch_mjd': None}, star['epoch_mjd'])
++        self.assertGreater(abs(wrong[0] - BARNARD['dec_deg_at_epoch']) * 3600, 150)
++
++    def test_named_target_without_motion_is_a_fixed_point(self):
++        named = {'name': 'somewhere', 'ra_deg_at_epoch': 1.0, 'dec_deg_at_epoch': 2.0, 'pmra_mas_yr': None}
++        self.assertIsNone(web.web_request({**PAYLOAD, 'named_target': named})['star'])
++
++
++class Pipeline(unittest.TestCase):
++    """The small pipeline changes the website relies on - and that the desktop defaults did not move."""
++
++    def test_image_selection(self):
++        images = Table({'t_min': np.arange(100.0)})
++        self.assertEqual(len(pipeline.select_images(images, None)), 100)
++        self.assertFalse(cfg.SPREAD_IMAGES)                                         # desktop default: the first ones
++        self.assertEqual(list(pipeline.select_images(images, 8)['t_min']), list(range(8)))
++        with settings_override({'SPREAD_IMAGES': True}):
++            spread = list(pipeline.select_images(images, 8)['t_min'])
++            self.assertEqual(len(pipeline.select_images(images, 500)), 100)
++        self.assertEqual((len(spread), spread[0], spread[-1]), (8, 0.0, 99.0))      # over all dates, ends included
++        self.assertTrue(np.all(np.diff(spread) > 10))
++        # pairs taken at the same moment (short + long arm) stay together, so each image can get its colour
++        pairs = Table({'t_min': np.repeat(np.arange(50.0), 2) + np.tile([0, 1e-6], 50)})
++        with settings_override({'SPREAD_IMAGES': True}):
++            picked = np.asarray(pipeline.select_images(pairs, 8)['t_min'])
++        self.assertEqual(len(picked), 8)
++        self.assertTrue(np.all(np.round(picked[0::2]) == np.round(picked[1::2])))
++        self.assertEqual((round(picked[0]), round(picked[-1])), (0, 49))
++
++    def test_patch_size_is_read_at_run_time(self):
++        frame = fake_zoom(60800.0, 1, size=120)
++        frame['catalog_xy'] = (60.0, 60.0)
++        self.assertEqual(pipeline.make_zooms([dict(frame)], False)[0]['image'].shape, (cfg.ZOOM_SIZE_PIX,) * 2)
++        with settings_override({'ZOOM_SIZE_PIX': 80}):
++            self.assertEqual(pipeline.make_zooms([dict(frame)], False)[0]['image'].shape, (80, 80))
++
++    def test_rejection_reasons_reach_the_user(self):
++        logged = ['Downloading and measuring 8 images (16 at a time)...',
++                  '  skipped 8 images that could not be used, e.g.: RuntimeError: Cutout: all 50 attempts failed (HTTP 502)']
++        message = web.explained(RuntimeError('None of the images could be measured at this position'), logged)
++        self.assertEqual(message, 'None of the images could be measured at this position. skipped 8 images that could '
++                                  'not be used, e.g.: RuntimeError: Cutout: all 50 attempts failed (HTTP 502)')
++        self.assertIn('IRSA did not answer', analysis_jobs.friendly(RuntimeError(message)))
++        self.assertEqual(web.explained(RuntimeError('No SPHEREx image covers x yet'), []), 'No SPHEREx image covers x yet.')
++
++    def test_failed_images_keep_their_reason(self):
++        """load_all_frames: an exception whose message starts with a blank line still gives its type and text."""
++        from Jonah_Code_File import frames
++        logged = []
++        def broken(row, coord, moving):
++            raise OSError('\nthe file is not readable')
++        with mock.patch.object(frames, 'load_frame', broken), mock.patch.object(
++                frames.log, 'info', lambda message: logged.append(message)):
++            self.assertEqual(frames.load_all_frames(None, [{}, {}], max_images=None), [])
++        self.assertTrue(any('OSError: the file is not readable' in line for line in logged), logged)
++
++    def test_web_runs_measure_in_process(self):
++        self.assertEqual(web.run_settings(web.web_request(PAYLOAD))['MEASURE_WORKERS'], 0)
++
++    def test_web_settings_are_restored(self):
++        before = {name: getattr(cfg, name) for name in web.run_settings(web.web_request(PAYLOAD))}
++        with settings_override(web.run_settings(web.web_request({**PAYLOAD, 'patch': {'half_width_deg': 0.2}}))):
++            self.assertTrue(cfg.SPREAD_IMAGES)
++            self.assertTrue(cfg.FIELD_CHECK)                                        # compared with the catalogs
++            self.assertTrue(cfg.SKYMAP_FOR_ALL_TARGETS)                             # every object named
++        self.assertEqual({name: getattr(cfg, name) for name in before}, before)
++
++
++class Rendering(unittest.TestCase):
++    """Offline: fake frames -> the desktop viewer's images (colour, correction, circles) on one north-up grid, and
++    the summary the browser reads (with the T1, T2 ... titles)."""
++    F = int(cfg.DISPLAY_UPSCALE)
++
++    @staticmethod
++    def png(folder, name):
++        with Image.open(Path(folder) / name) as image:
++            return np.asarray(image.convert('RGB'), dtype=float)
++
++    def test_frames_line_up(self):
++        zooms = [fake_zoom(60800.0, 1, rotation_deg=0.0, star_east_px=8), fake_zoom(60800.1, 2, 90.0, 8),
++                 fake_zoom(60990.0, 4, 217.0, 8)]
++        with tempfile.TemporaryDirectory() as tmp:
++            shown = web.write_frames(zooms, tmp, 40)
++            self.assertEqual([s['png'] for s in shown], ['frame_1.png', 'frame_2.png', 'frame_3.png'])
++            for s in shown:
++                rgb = self.png(tmp, s['png'])
++                self.assertEqual(rgb.shape, (40 * self.F, 40 * self.F, 3))          # upscaled like the desktop
++                white = rgb.min(axis=2)                                             # (the circles are not white)
++                row, column = np.argwhere(white > 0.8 * white.max()).mean(axis=0)  # the star's (flat-topped) centre
++                # the star is 8 px EAST of the target: 8 px LEFT of the centre, same row - whatever the rotation
++                self.assertLessEqual(abs(column - (11.5 + 0.5) * self.F), self.F, s['png'])
++                self.assertLessEqual(abs(row - (19.5 + 0.5) * self.F), self.F, s['png'])
++                self.assertEqual(s['flags_in_aperture'], ['HOT'])
++
++    def test_circles(self):
++        """The desktop viewer's circles, in PNG pixels for the overlay: red = found here, blue dashed = at T1."""
++        from astropy.coordinates import SkyCoord
++        zooms = [fake_zoom(60800.0, 1), fake_zoom(60990.0, 2)]
++        zooms[1]['object_ra'] += 2 * 6.15 / 3600 / np.cos(np.radians(-7.2))       # found 2 px EAST of T1's position
++        movement = {'reference': SkyCoord(133.8, -7.2, unit='deg')}                 # the object at T1: the centre
++        with tempfile.TemporaryDirectory() as tmp:
++            shown = web.write_frames(zooms, tmp, 40, movement)
++        marks, centre = shown[1]['marks'], 20 * self.F
++        self.assertAlmostEqual(marks['blue'][0], centre, delta=0.5)
++        self.assertAlmostEqual(marks['blue'][1], centre, delta=0.5)
++        self.assertAlmostEqual(marks['red'][0], centre - 2 * self.F, delta=0.5)    # east is LEFT
++        self.assertAlmostEqual(marks['red'][1], centre, delta=0.5)
++        self.assertEqual((marks['radius'], marks['blue_radius']),
++                         (cfg.APERTURE_RADIUS_PIX * self.F, (cfg.APERTURE_RADIUS_PIX + 0.6) * self.F))
++        self.assertIsNone(shown[0]['objects'])                                      # no sky map in these frames
++
++    def test_colour_from_the_other_arm(self):
++        # the same exposure on a short (D1) and a long (D4) arm; the star is much brighter at the long wavelength
++        zooms = [fake_zoom(60800.0, 1, star_east_px=8, star_peak=1.0), fake_zoom(60800.0, 4, star_east_px=8, star_peak=8.0),
++                 fake_zoom(60801.0, 1, star_east_px=0, star_peak=4.0), fake_zoom(60801.0, 4, star_east_px=0, star_peak=4.0)]
++        with tempfile.TemporaryDirectory() as tmp:
++            shown = web.write_frames(zooms, tmp, 40)
++            rgb = self.png(tmp, 'frame_1.png')
++        self.assertEqual(shown[0]['colour_um'], [1.4, 2.9])                          # short, long: the colour key
++        star = rgb[(19 + 1) * self.F - 4:(20 + 1) * self.F + 4, (11 + 1) * self.F - 4:(12 + 1) * self.F + 4]
++        self.assertGreater(star[..., 0].mean(), star[..., 2].mean() + 20)            # redder than the typical star
++
++    def test_summary_and_titles(self):
++        zooms = [fake_zoom(60800.0, 1), fake_zoom(60990.5, 3)]
++        zooms[1]['snr'] = np.nan                                                    # not measurable -> null, not NaN
++        request = web.web_request(PAYLOAD)
++        movement = {'flagged': np.array([False, True]), 'offset_arcsec': np.array([0.0, 7.5]),
++                    'reference_label': 'object at T1'}
++        brightness = {'flagged': np.array([False, False]), 'deviation': np.array([0.012, np.nan])}
++        with tempfile.TemporaryDirectory() as tmp:
++            results = {'tracked': {'name': 'x', 'images_available': 7}, 'frames': zooms, 'zooms': zooms,
++                       'movement': movement, 'brightness': brightness}
++            summary = json.loads(json.dumps(web.summary_of(results, request, web.write_frames(zooms, tmp, 50))))
++        self.assertEqual((summary['n_frames'], summary['images_available'], summary['patch_px']), (2, 7, 50))
++        first, second = summary['frames']
++        self.assertEqual(first['time_utc'], '2025-05-05 00:00:00')
++        self.assertEqual((first['detector'], first['wavelength_um'], first['snr']), (1, 1.4, 12.5))
++        self.assertIsNone(second['snr'])
++        self.assertEqual((first['name'], second['name']), ('T1', 'T2'))
++        self.assertEqual(first['title'][0], 'T1 of 2   2025-05-05 00:00   +0.00 d   detector 1   '
++                                            '[1 bad pixel(s) in circle: not used]')
++        self.assertEqual(first['title'][1], 'λ = 1.400 µm   moved 0.00"')
++        self.assertEqual(first['title'][2], 'flux 1.00 ± 0.10 mJy   vs spectrum +1.2%')
++        self.assertEqual(second['title'][1], 'λ = 2.400 µm   moved 7.50"  << MOVED')
++        self.assertIn('n/a (too few similar-wavelength frames)', second['title'][2])
++        self.assertEqual(summary['circles'], {'red': 'object found in this frame', 'blue': 'object at T1'})
++        for key in ('n', 'png', 'mjd', 'flags_in_aperture', 'n_bad_in_aperture', 'saturated', 'colour_um'):
++            self.assertIn(key, first)
++
++
++def fake_sky_map(zooms):
++    """A sky map like skymap.map_sky's on two fake frames: a Gaia star, a named Hipparcos star, an asteroid,
++    an artifact and one NEW object (seen in both frames)."""
++    from astropy.table import Table as T
++    catalog = T(rows=[('Gaia DR3 1', 'Gaia', 'Gaia DR3 1', 133.801, -7.199, 57388.5, 1.0, -2.0, 0.5, 0),
++                      ('Sirius (HIP 32349)', 'Gaia', 'Gaia DR3 2', 133.79, -7.21, 57388.5, 0.0, 0.0, np.nan, 32349)],
++                names=('label', 'source', 'name', 'ra', 'dec', 'epoch_mjd', 'pmra', 'pmdec', 'parallax', 'hip'))
++    for n, zoom in enumerate(zooms):
++        zoom['map'] = [
++            {'kind': 'star', 'source': 'Gaia', 'label': 'Gaia DR3 1', 'ra': 133.801, 'dec': -7.199, 'detected': True,
++             'named': False, 'catalog_row': 0},
++            {'kind': 'star', 'source': 'Gaia', 'label': 'Sirius (HIP 32349)', 'ra': 133.79, 'dec': -7.21,
++             'detected': True, 'named': True, 'catalog_row': 1},
++            {'kind': 'small body', 'label': '433 Eros (A898 PA)', 'ra': 133.805, 'dec': -7.195, 'detected': n == 1,
++             'body': '433', 'info': 'an, Amor'},
++            {'kind': 'artifact', 'label': 'artifact: GHOST', 'ra': 133.796, 'dec': -7.204, 'detected': True},
++            {'kind': 'new', 'label': 'NEW-1 (moving)', 'ra': 133.803 + 0.001 * n, 'dec': -7.198, 'detected': True,
++             'new_id': 'NEW-1', 'info': 'moves 3"/h'},
++            {'kind': 'star', 'source': 'Gaia', 'label': 'far away', 'ra': 140.0, 'dec': 0.0, 'detected': True,
++             'named': False, 'catalog_row': 0}]
++    new = [{'id': 'NEW-1', 'kind': 'moving', 'description': 'moves 3"/h', 'ra': 133.803, 'dec': -7.198,
++            'detections': [{'mjd': z['mjd'], 'ra': 133.803, 'dec': -7.198} for z in zooms],
++            'track': {'kind': 'path', 'name': 'NEW-1 (unknown mover)', 'mjd': [z['mjd'] for z in zooms],
++                      'ra': [133.803, 133.804], 'dec': [-7.198, -7.198]}}]
++    bodies = [{'fullname': '433 Eros (A898 PA)', 'kind': 'an', 'orbit_class': 'Amor', 'positions': {1: (133.805, -7.195)}}]
++    return {'catalog': catalog, 'bodies': bodies, 'planets': {}, 'new_objects': new, 'checked': {0, 1}}
++
++
++class SkyMap(unittest.TestCase):
++    """Offline: the sky map, the catalog comparison and tracking - what the desktop viewer has - reach the browser."""
++
++    def setUp(self):
++        self.zooms = [fake_zoom(60800.0, 1), fake_zoom(60990.0, 2)]
++        self.sky = fake_sky_map(self.zooms)
++        self.results = {'tracked': {'name': 'x', 'images_available': 2, 'skymap': self.sky}, 'frames': self.zooms,
++                        'zooms': self.zooms, 'skymap': self.sky,
++                        'field': {'offset_px': np.array([[0.1, 0.0], [0.0, 0.1], [0.05, 0.0]]), 'candidates': []}}
++
++    def test_objects_drawn_and_named(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            shown = web.write_frames(self.zooms, tmp, 40)
++        objects = shown[0]['objects']
++        self.assertEqual([o['id'] for o in objects], ['star:0', 'star:1', 'small body:433', 'artifact:artifact: GHOST', 'new:NEW-1'])
++        self.assertEqual(shown[0]['map_text'], 'mapped: 2 Gaia DR3 (+), 1 known asteroid/comet, 1 flagged artifact, 1 NEW (yellow)')
++        new = objects[-1]
++        F = int(cfg.DISPLAY_UPSCALE)
++        x = (19.5 - 0.003 * 3600 * np.cos(np.radians(-7.2)) / 6.15 + 0.5) * F            # 0.003 deg EAST: left
++        self.assertAlmostEqual(new['x'], x, delta=0.6 * F)
++        self.assertLess(new['y'], 20 * F)                                               # north: up
++        self.assertFalse(objects[2]['detected'])                                        # Eros not seen in T1
++
++    def shown(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            return web.write_frames(self.zooms, tmp, 40)
++
++    def test_objects_and_how_to_track_them(self):
++        objects = web.mapped_objects(self.results, self.shown())
++        self.assertNotIn('star:far away', objects)                                       # outside the images
++        self.assertEqual(objects['new:NEW-1']['frames'], [1, 2])
++        self.assertEqual(objects['new:NEW-1']['track']['kind'], 'path')
++        self.assertEqual(objects['small body:433']['detected_in'], [2])
++        self.assertEqual(objects['small body:433']['track']['kind'], 'asteroid')
++        self.assertEqual(objects['small body:433']['track']['id'], '433')
++        star = objects['star:0']['track']
++        self.assertEqual((star['kind'], star['star']['name']), ('star', 'Gaia DR3 1'))
++        self.assertIsNone(objects['artifact:artifact: GHOST']['track'])
++        self.assertIn('artifact', objects['artifact:artifact: GHOST']['reason'])
++        json.dumps(objects)                                                             # browser-ready
++        # what the browser sends back to track an object is accepted as it is
++        for oid in ('new:NEW-1', 'small body:433', 'star:0'):
++            request = web.web_request({**PAYLOAD, 'track': objects[oid]['track']})
++            self.assertEqual(request['track']['kind'], objects[oid]['track']['kind'])
++
++    def test_database_comparison(self):
++        logged = ['(Hipparcos / Stellarium names not available: Hipparcos: all 4 attempts failed)']
++        db = web.database_comparison(self.results, logged, web.mapped_objects(self.results, self.shown()))
++        self.assertEqual(db['new_outside'], 0)
++        self.assertTrue(db['sky_map'] and db['field_check'])
++        self.assertEqual(db['catalog_stars'], {'Gaia': 2, 'Hipparcos': 1})
++        self.assertEqual(db['pointing']['matches'], 3)
++        self.assertAlmostEqual(db['pointing']['median_offset_arcsec'], 0.1 * 6.15)
++        self.assertEqual(db['known_small_bodies'], [{'name': '433 Eros (A898 PA)', 'kind': 'an', 'orbit_class': 'Amor', 'frames': [2]}])
++        self.assertEqual(db['new_objects'][0]['id'], 'NEW-1')
++        self.assertEqual(db['new_objects'][0]['object'], 'new:NEW-1')
++        self.assertEqual(db['notes'], ['Hipparcos / Stellarium names not available: Hipparcos: all 4 attempts failed'])
++
++    def test_objects_outside_the_images_are_left_out(self):
++        for zoom in self.zooms:                                       # NEW-1 moved 3' away: in the margin only
++            zoom['map'][4] = {**zoom['map'][4], 'ra': 133.85, 'dec': -7.15}
++        objects = web.mapped_objects(self.results, self.shown())
++        self.assertNotIn('new:NEW-1', objects)
++        db = web.database_comparison(self.results, [], objects)
++        self.assertEqual((db['new_objects'], db['new_outside']), ([], 1))
++
++    def test_track_requests(self):
++        star = {'kind': 'star', 'name': 'Gaia DR3 1', 'star': {'name': 'Gaia DR3 1', 'ra': 10.0, 'dec': 5.0, 'pmra': 3.0,
++                                                               'pmdec': -1.0, 'parallax': 2.0}}
++        path = {'kind': 'path', 'name': 'NEW-1', 'mjd': [60800.0, 60801.0], 'ra': [1.0, 1.1], 'dec': [2.0, 2.0]}
++        asteroid = {'kind': 'asteroid', 'name': '433 Eros', 'id': '433', 'window': ['2025-06-01', '2025-08-30']}
++        coords = {'kind': 'coords', 'name': 'NEW-2', 'coords': [10.5, -3.0]}
++        calls = []
++        fake = mock.Mock()
++        fake.run_fixed_target.side_effect = lambda star, settings, n, show: calls.append(('fixed', star['ra'], star['pmra'], settings['mode'], n, show))
++        fake.run_asteroid.side_effect = lambda id_, window, n, show: calls.append(('asteroid', id_, window, n, show))
++        fake.run_path.side_effect = lambda name, mjd, ra, dec, n, show: calls.append(('path', name, len(mjd), n, show))
++        for spec in (star, path, asteroid, coords):
++            web.run(web.web_request({**PAYLOAD, 'max_images': 8, 'track': spec}), fake)
++        web.run(web.web_request(PAYLOAD), fake)
++        self.assertEqual(calls, [('fixed', 10.0, 3.0, 'catalog star', 8, False), ('path', 'NEW-1', 2, 8, False),
++                                 ('asteroid', '433', ('2025-06-01', '2025-08-30'), 8, False),
++                                 ('fixed', 10.5, 0.0, 'web', 8, False), ('fixed', 133.795129, 0.0, 'web', 24, False)])
++        for bad in ({'kind': 'teleport'}, {**asteroid, 'window': ['soon', 'later']}, {**path, 'ra': [1.0]},
++                    {**coords, 'coords': [500, 0]}, {'kind': 'star', 'name': 'x'}, 'NEW-1'):
++            with self.assertRaises(ValueError):
++                web.web_request({**PAYLOAD, 'track': bad})
++
++
++class Endpoints(unittest.TestCase):
++    """Flask test client: the three new routes, with the pipeline run replaced by fake_analyse (no internet)."""
++
++    def setUp(self):
++        self.client = app.test_client()
++        self.tmp = tempfile.TemporaryDirectory()
++        patches = [mock.patch.object(web, 'results_folder', lambda: Path(self.tmp.name)),
++                   mock.patch.object(web, 'analyse', fake_analyse)]
++        for p in patches:
++            p.start()
++            self.addCleanup(p.stop)
++        self.addCleanup(self.tmp.cleanup)
++        analysis_jobs._jobs.clear()
++
++    def test_existing_pages_still_answer(self):
++        self.assertEqual(self.client.get('/').status_code, 200)
++        self.assertIn(b'id="tlPlayer"', self.client.get('/').data)
++        self.assertNotIn(b'coming soon', self.client.get('/').data)
++        self.assertNotIn(b'id="anaMap"', self.client.get('/').data)                # only the analysed images are shown
++        self.assertNotIn(b'id="anaSB"', self.client.get('/').data)                 # no predicted (JPL) list either
++        self.assertIn(b'id="tlSvg"', self.client.get('/').data)                    # the sky map / circles overlay
++        page = self.client.get('/').data
++        for element in (b'id="tlLoad"', b'id="tlTip"', b'id="anaMin"', b'id="anaMini"', b'class="anaLeft"', b'class="anaRight"',
++                        b'id="tlFirst"', b'id="tlPrev"', b'id="tlNext"', b'id="tlLast"', b'id="tlSpeed"'):
++            self.assertIn(element, page)                                            # loading card, minimize, layout, controls
++        self.assertIn(b'slight display enhancements', page)                         # the image disclaimer
++        self.assertIn(b'can make mistakes', page)
++        self.assertIn(b'up to about a minute for low image counts', page)            # the timing notice
++        self.assertIn(b'up to about 3 minutes for high counts', page)
++        self.assertEqual(self.client.get('/about').status_code, 200)
++        self.assertEqual(self.client.get('/no/such/page').status_code, 404)
++        self.assertEqual(self.client.get('/api/no-such').get_json(), {'error': 'not found'})
++        self.assertEqual(self.client.get('/api/meta').status_code, 200)
++
++    def test_bad_input_is_rejected(self):
++        for body in ({}, {**PAYLOAD, 'target': {'ra_deg': 400, 'dec_deg': 0}}, {**PAYLOAD, 'max_images': 0},
++                     {**PAYLOAD, 'patch': {'half_width_deg': 'wide'}}):
++            reply = self.client.post('/api/analysis', json=body)
++            self.assertEqual(reply.status_code, 400, body)
++            self.assertIn('error', reply.get_json())
++        self.assertEqual(self.client.post('/api/analysis', data='not json').status_code, 400)
++        self.assertEqual(self.client.post('/api/analysis', json={**PAYLOAD, 'track': {'kind': 'teleport'}}).status_code, 400)
++        self.assertEqual(self.client.get('/api/analysis').status_code, 405)
++        self.assertEqual(self.client.get('/api/analysis/0123456789abcdef').status_code, 404)        # unknown job
++        self.assertEqual(self.client.get('/api/analysis/..%2F..%2Fconfig').status_code, 404)
++        self.assertEqual(self.client.get('/api/analysis/0123456789abcdef/frame_1.png').status_code, 404)
++        self.assertEqual(self.client.get('/api/analysis/0123456789abcdef/..%2Fsummary.png').status_code, 404)
++
++    def test_run_poll_and_images(self):
++        reply = self.client.post('/api/analysis', json={**PAYLOAD, 'max_images': 8})
++        self.assertEqual(reply.status_code, 202)
++        job = reply.get_json()['job']
++        self.assertEqual(reply.get_json()['request']['max_images'], 8)
++        state = wait_for(self.client, job)
++        self.assertEqual(state['status'], 'done', state)
++        summary = state['summary']
++        self.assertEqual((summary['n_frames'], summary['images_available']), (2, 40))
++        self.assertEqual(summary['frames'][1]['flags_in_aperture'], ['HOT'])
++        for frame in summary['frames']:
++            image = self.client.get(f"/api/analysis/{job}/{frame['png']}")
++            self.assertEqual((image.status_code, image.mimetype), (200, 'image/png'))
++            self.assertEqual(image.data[:8], b'\x89PNG\r\n\x1a\n')
++            image.close()
++        self.assertTrue((Path(self.tmp.name) / job / 'summary.json').exists())
++        # the same request again: the same job, answered from the saved results (also after a restart)
++        analysis_jobs._jobs.clear()
++        again = self.client.post('/api/analysis', json={**PAYLOAD, 'max_images': 8}).get_json()['job']
++        self.assertEqual(again, job)
++        self.assertEqual(self.client.get(f'/api/analysis/{job}').get_json()['status'], 'done')
++        # another number of images is another job
++        other = self.client.post('/api/analysis', json={**PAYLOAD, 'max_images': 24}).get_json()['job']
++        self.assertNotEqual(other, job)
++        wait_for(self.client, other)
++
++    def test_analysed_patches_for_the_viewer(self):
++        """/api/analyses: every finished analysis, drawn on the sky by the viewer (and reopened from its request)."""
++        self.assertEqual(self.client.get('/api/analyses').get_json(), {'analyses': []})
++        job = self.client.post('/api/analysis', json={**PAYLOAD, 'max_images': 8}).get_json()['job']
++        self.assertEqual(wait_for(self.client, job)['status'], 'done')
++        moving = Path(self.tmp.name) / 'abcdef0123456789'                           # a tracked asteroid, saved earlier
++        moving.mkdir()
++        (moving / 'summary.json').write_text(json.dumps({
++            'target': {'name': '433 Eros', 'ra_deg': 1.0, 'dec_deg': 2.0, 'moving': True}, 'tracking': '433 Eros',
++            'request': {**web.web_request(PAYLOAD), 'track': {'kind': 'asteroid', 'name': '433 Eros', 'id': '433',
++                                                              'window': ['2026-02-15', '2026-06-15']}},
++            'patch_px': 50, 'pixel_arcsec': 6.15, 'n_frames': 3, 'images_available': 9,
++            'frames': [{'time_utc': f'2026-03-0{k} 00:00:00', 'expected_ra': 100.0 + k, 'expected_dec': 10.0 + k} for k in (1, 2, 3)],
++            'database': {'sky_map': False}}))
++        (Path(self.tmp.name) / '0000000000000000').mkdir()                           # unreadable: skipped
++        analyses = {a['job']: a for a in self.client.get('/api/analyses').get_json()['analyses']}
++        self.assertEqual(set(analyses), {job, 'abcdef0123456789'})
++        fixed, eros = analyses[job], analyses['abcdef0123456789']
++        self.assertFalse(fixed['moving'])
++        self.assertIsNone(fixed['path'])
++        self.assertAlmostEqual(fixed['ra_deg'], 133.8, places=6)                    # the target's position in the images
++        self.assertEqual((fixed['n_frames'], fixed['images_available'], fixed['patch_px']), (2, 40, 50))
++        self.assertEqual(fixed['request'], web.web_request({**PAYLOAD, 'max_images': 8}))   # reopens the same job
++        self.assertEqual(web_job(fixed['request']), job)
++        self.assertTrue(eros['moving'])
++        self.assertEqual(eros['path'], [[101.0, 11.0], [102.0, 12.0], [103.0, 13.0]])
++        self.assertEqual((eros['ra_deg'], eros['dec_deg']), (102.0, 12.0))            # labelled mid-path
++        self.assertEqual((eros['first_utc'], eros['last_utc'], eros['tracking']), ('2026-03-01 00:00:00', '2026-03-03 00:00:00', '433 Eros'))
++        # what the browser sends to reopen the tracked one is accepted and is the same request
++        request = eros['request']
++        again = web.web_request({**PAYLOAD, 'max_images': request['max_images'], 'track': request['track']})
++        self.assertEqual(again, request)
++
++    def test_failure_becomes_a_message(self):
++        def irsa_down(request, folder, on_progress=None):
++            raise RuntimeError('SPHEREx image search: all 50 attempts failed (HTTP 502)')
++        with mock.patch.object(web, 'analyse', irsa_down):
++            job = self.client.post('/api/analysis', json=PAYLOAD).get_json()['job']
++            state = wait_for(self.client, job)
++        self.assertEqual(state['status'], 'error')
++        self.assertIn('IRSA did not answer', state['error'])
++        self.assertIn('try again', state['error'])
++        with mock.patch.object(web, 'analyse', fake_analyse):                       # "Try again" then works
++            self.assertEqual(wait_for(self.client, self.client.post('/api/analysis', json=PAYLOAD).get_json()['job'])['status'], 'done')
++
++
++@unittest.skipUnless(os.environ.get('XARVIS_ONLINE'), 'needs the internet (NASA/IPAC IRSA): set XARVIS_ONLINE=1')
++class RealRun(unittest.TestCase):
++    """One real run through the website: WISE 0855-0714, 8 images."""
++
++    def test_wise_0855(self):
++        client = app.test_client()
++        reply = client.post('/api/analysis', json={**PAYLOAD, 'max_images': 8})
++        self.assertEqual(reply.status_code, 202)
++        job = reply.get_json()['job']
++        start = time.time()
++        state = wait_for(client, job, seconds=900)
++        self.assertEqual(state['status'], 'done', state.get('error'))
++        summary = state['summary']
++        print(f"\n  real run: {summary['n_frames']} frames of {summary['images_available']} images in "
++              f"{time.time() - start:.0f} s -> {analysis_jobs.folder(job)}")
++        for frame in summary['frames']:
++            print(f"    {frame['n']:2d}  {frame['time_utc']}  detector {frame['detector']}  "
++                  f"{frame['wavelength_um']:.3f} um  S/N {frame['snr']}  flags {frame['flags_in_aperture']}")
++        self.assertGreaterEqual(summary['n_frames'], 1)
++        self.assertLessEqual(summary['n_frames'], 8)
++        self.assertTrue((analysis_jobs.folder(job) / 'summary.json').exists())
++        for frame in summary['frames']:
++            image = client.get(f"/api/analysis/{job}/{frame['png']}")
++            self.assertEqual(image.status_code, 200)
++            image.close()
++            with Image.open(analysis_jobs.folder(job) / frame['png']) as png:
++                self.assertEqual(png.size, (50 * int(cfg.DISPLAY_UPSCALE),) * 2)
++            self.assertIsNotNone(frame['objects'])                                  # every frame has its sky map
++        database = summary['database']
++        print(f"  sky map: {len(summary['objects'])} objects in the images; compared with {database.get('catalog_stars')}; "
++              f"positions vs Gaia: {database.get('pointing')}; NEW in the images: {len(database.get('new_objects', []))}")
++        self.assertTrue(database['sky_map'] and database['field_check'])
++        self.assertGreater(database['pointing']['matches'], 0)
++        self.assertTrue(any(o['track'] for o in summary['objects'].values()))         # objects can be tracked
++
++
++if __name__ == '__main__':
++    unittest.main()
